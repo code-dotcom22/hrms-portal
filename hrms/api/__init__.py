@@ -3,7 +3,7 @@ from frappe import _
 from frappe.model import get_permitted_fields
 from frappe.model.workflow import get_workflow_name
 from frappe.query_builder import Order
-from frappe.utils import add_days, date_diff, getdate, strip_html
+from frappe.utils import add_days, date_diff, get_first_day, getdate, strip_html
 
 from erpnext.setup.doctype.employee.employee import get_holiday_list_for_employee
 
@@ -134,6 +134,51 @@ def are_push_notifications_enabled() -> bool:
 	except frappe.DoesNotExistError:
 		# push notifications are not supported in the current framework version
 		return False
+
+
+# Login / Dashboard summary
+@frappe.whitelist()
+def get_employee_login_summary(from_date: str | None = None, to_date: str | None = None) -> dict:
+	"""Attendance (incl. working hours) and leave snapshot for the logged-in employee.
+
+	Meant to be called once by the client right after a session is established
+	via /api/method/login, so the client isn't hunting through Attendance,
+	Leave Application and Leave Allocation separately.
+	"""
+	employee = get_current_employee()
+
+	to_date = getdate(to_date) if to_date else getdate()
+	from_date = getdate(from_date) if from_date else get_first_day(to_date)
+
+	return frappe._dict(
+		employee=get_current_employee_info(),
+		attendance=get_attendance_with_working_hours(employee, from_date, to_date),
+		leave_applications=get_leave_applications(employee, limit=20),
+		leave_balance=get_leave_balance_map(),
+	)
+
+
+def get_attendance_with_working_hours(employee: str, from_date, to_date) -> list[dict]:
+	return frappe.get_list(
+		"Attendance",
+		filters={
+			"employee": employee,
+			"attendance_date": ["between", [from_date, to_date]],
+			"docstatus": 1,
+		},
+		fields=[
+			"name",
+			"attendance_date",
+			"status",
+			"working_hours",
+			"in_time",
+			"out_time",
+			"late_entry",
+			"early_exit",
+			"shift",
+		],
+		order_by="attendance_date desc",
+	)
 
 
 # Attendance

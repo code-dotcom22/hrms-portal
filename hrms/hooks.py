@@ -72,6 +72,10 @@ doctype_js = {
 # 	"Role": "home_page"
 # }
 
+# plain employees land on the self-service dashboard instead of the full Desk;
+# HR/System Managers are excluded inside the function and keep the normal Desk
+get_website_user_home_page = "hrms.hr.utils.get_employee_home_page"
+
 calendars = ["Leave Application"]
 
 # Generators

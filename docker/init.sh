@@ -10,6 +10,8 @@ fi
 
 export PATH="${NVM_DIR}/versions/node/v${NODE_VERSION_DEVELOP}/bin/:${PATH}"
 
+git config --global --add safe.directory /workspace
+
 bench init --skip-redis-config-generation frappe-bench
 
 cd frappe-bench
@@ -25,7 +27,7 @@ sed -i '/redis/d' ./Procfile
 sed -i '/watch/d' ./Procfile
 
 bench get-app erpnext
-bench get-app hrms
+bench get-app hrms /workspace
 
 bench new-site hrms.localhost \
 --force \

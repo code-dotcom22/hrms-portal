@@ -153,7 +153,7 @@ def get_employee_login_summary(from_date: str | None = None, to_date: str | None
 	return frappe._dict(
 		employee=get_current_employee_info(),
 		attendance=get_attendance_with_working_hours(employee, from_date, to_date),
-		leave_applications=get_leave_applications(employee, limit=20),
+		leave_applications=get_leave_applications(employee, limit=20, from_date=from_date, to_date=to_date),
 		leave_balance=get_leave_balance_map(),
 	)
 
@@ -394,8 +394,15 @@ def get_leave_applications(
 	approver_id: str | None = None,
 	for_approval: bool = False,
 	limit: int | None = None,
+	from_date: str | None = None,
+	to_date: str | None = None,
 ) -> list[dict]:
 	filters = get_filters("Leave Application", employee, approver_id, for_approval)
+	if from_date and to_date:
+		# overlap: application spans any part of [from_date, to_date]
+		filters["from_date"] = ("<=", to_date)
+		filters["to_date"] = (">=", from_date)
+
 	fields = [
 		"name",
 		"posting_date",

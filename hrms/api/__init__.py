@@ -153,7 +153,9 @@ def get_employee_login_summary(from_date: str | None = None, to_date: str | None
 	return frappe._dict(
 		employee=get_current_employee_info(),
 		attendance=get_attendance_with_working_hours(employee, from_date, to_date),
-		leave_applications=get_leave_applications(employee, limit=20, from_date=from_date, to_date=to_date),
+		leave_applications=get_leave_applications(
+			employee, limit=20, from_date=str(from_date), to_date=str(to_date)
+		),
 		leave_balance=get_leave_balance_map(),
 	)
 

@@ -1,29 +1,186 @@
 .hr-dashboard-body {
-	padding: 20px 0;
+	padding: 20px 0 40px;
 }
 
-.hr-dashboard-row {
-	display: flex;
-	gap: 12px;
-	margin: 12px 0 24px;
-	flex-wrap: wrap;
-}
-
-.hr-dashboard-card {
-	flex: 1 1 160px;
-	border: 1px solid var(--border-color);
-	border-radius: var(--border-radius-md);
-	padding: 16px;
+.hr-dashboard-message {
+	padding: 60px 0;
 	text-align: center;
 }
 
-.hr-dashboard-stat-value {
-	font-size: 24px;
+.hr-dashboard-section-title {
+	margin-top: 28px;
+	margin-bottom: 12px;
+}
+
+/* Header */
+
+.hr-dashboard-header {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	margin-bottom: 20px;
+}
+
+.hr-dashboard-header h4 {
+	margin: 0;
+}
+
+/* Stat tiles */
+
+.hr-dashboard-stats {
+	display: flex;
+	gap: 12px;
+	flex-wrap: wrap;
+}
+
+.hr-stat-card {
+	flex: 1 1 200px;
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	border: 1px solid var(--border-color);
+	border-radius: var(--border-radius-md);
+	padding: 16px;
+	box-shadow: var(--shadow-sm);
+}
+
+.hr-stat-icon {
+	flex-shrink: 0;
+	stroke: var(--text-muted);
+}
+
+.hr-stat-value {
+	font-size: 22px;
+	font-weight: 600;
+	line-height: 1.2;
+}
+
+.hr-stat-label {
+	color: var(--text-muted);
+	font-size: 12px;
+	margin-top: 2px;
+}
+
+/* Leave balance rings */
+
+.hr-dashboard-leave-balance {
+	display: flex;
+	gap: 16px;
+	flex-wrap: wrap;
+}
+
+.hr-leave-balance-card {
+	flex: 1 1 160px;
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	border: 1px solid var(--border-color);
+	border-radius: var(--border-radius-md);
+	padding: 14px 16px;
+}
+
+.hr-ring {
+	width: 48px;
+	height: 48px;
+	flex-shrink: 0;
+	transform: rotate(-90deg);
+	transform-origin: center;
+}
+
+.hr-ring-bg {
+	fill: none;
+	stroke: var(--gray-200);
+	stroke-width: 4;
+}
+
+.hr-ring-value {
+	fill: none;
+	stroke-width: 4;
+	stroke-linecap: round;
+}
+
+/* Fallback hex values are sourced from frappe-ui's palette (colors.json) since
+   Frappe Desk core doesn't expose numbered color CSS variables in this repo. */
+.hr-ring-value.blue {
+	stroke: var(--blue-500, #0289f7);
+}
+.hr-ring-value.green {
+	stroke: var(--green-500, #46b37e);
+}
+.hr-ring-value.orange {
+	stroke: var(--orange-500, #e86c13);
+}
+.hr-ring-value.purple {
+	stroke: var(--purple-500, #9c45e3);
+}
+.hr-ring-value.cyan {
+	stroke: var(--cyan-500, #3bbde5);
+}
+.hr-ring-value.pink {
+	stroke: var(--pink-500, #e34aa6);
+}
+
+.hr-ring-value-text {
+	font-size: 16px;
 	font-weight: 600;
 }
 
-.hr-dashboard-stat-label {
-	color: var(--text-muted);
-	font-size: 12px;
-	margin-top: 4px;
+/* Tables */
+
+.hr-dashboard-table-wrapper {
+	overflow-x: auto;
+}
+
+.hr-dashboard-table-wrapper table {
+	margin-bottom: 0;
+}
+
+/* App switcher */
+
+.hr-dashboard-apps {
+	display: flex;
+	gap: 12px;
+	flex-wrap: wrap;
+}
+
+.hr-app-card {
+	flex: 1 1 200px;
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	border: 1px solid var(--border-color);
+	border-radius: var(--border-radius-md);
+	padding: 14px 16px;
+	color: inherit;
+	text-decoration: none;
+	transition: box-shadow 0.15s ease;
+}
+
+.hr-app-card:hover {
+	box-shadow: var(--shadow-md);
+	color: inherit;
+	text-decoration: none;
+}
+
+.hr-app-card-badge {
+	flex-shrink: 0;
+	width: 32px;
+	height: 32px;
+	border-radius: var(--border-radius-md);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	color: #fff;
+	font-size: 11px;
+	font-weight: 600;
+}
+
+.hr-app-card-label {
+	flex: 1;
+	font-weight: 500;
+}
+
+.hr-app-card-arrow {
+	flex-shrink: 0;
+	stroke: var(--text-muted);
 }

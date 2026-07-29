@@ -5,10 +5,6 @@ frappe.pages["hr-dashboard"].on_page_load = function (wrapper) {
 		single_column: true,
 	});
 
-	page.set_primary_action(__("Go to Frappe HR"), () => {
-		frappe.set_route("hr-setup");
-	});
-
 	new hrms.HRDashboard(page);
 };
 
@@ -16,14 +12,30 @@ hrms.HRDashboard = class HRDashboard {
 	constructor(page) {
 		this.page = page;
 		this.wrapper = $('<div class="hr-dashboard"></div>').appendTo(this.page.main);
-		this.render_loading();
-		this.fetch();
-	}
 
-	render_loading() {
-		this.wrapper.html(
-			`<div class="text-muted text-center" style="padding: 60px 0;">${__("Loading...")}</div>`,
-		);
+		// Same indicator names Desk already uses for `indicator-pill`, so a
+		// status reads the same way here as it does everywhere else in the app.
+		this.ring_colors = ["blue", "green", "orange", "purple", "cyan", "pink"];
+		this.attendance_status_colors = {
+			Present: "green",
+			Absent: "red",
+			"On Leave": "blue",
+			"Half Day": "orange",
+			"Work From Home": "cyan",
+		};
+		this.leave_status_colors = {
+			Approved: "green",
+			Rejected: "red",
+			Open: "orange",
+			Cancelled: "gray",
+		};
+
+		this.wrapper.on("click", ".hr-app-card", (e) => {
+			e.preventDefault();
+			frappe.set_route($(e.currentTarget).attr("data-route"));
+		});
+		this.render_message(__("Loading..."));
+		this.fetch();
 	}
 
 	fetch() {
@@ -37,111 +49,219 @@ hrms.HRDashboard = class HRDashboard {
 				}
 			},
 			error: () => {
-				this.wrapper.html(
-					`<div class="text-muted text-center" style="padding: 60px 0;">${__(
-						"Could not load your dashboard.",
-					)}</div>`,
-				);
+				this.render_message(__("Could not load your dashboard."));
 			},
 		});
+	}
+
+	render_message(text) {
+		this.wrapper.html(`<div class="hr-dashboard-message text-muted">${text}</div>`);
 	}
 
 	render() {
 		const { employee, attendance, leave_applications, leave_balance } = this.data;
 
+		this.wrapper.html(`
+			<div class="hr-dashboard-body">
+				${this.get_header_html(employee)}
+				${this.get_stat_cards_html(attendance, leave_applications)}
+				${this.get_leave_balance_html(leave_balance)}
+				${this.get_table_section_html(
+					__("Attendance"),
+					[__("Date"), __("Status"), __("Working Hours")],
+					this.get_attendance_rows_html(attendance),
+				)}
+				${this.get_table_section_html(
+					__("Leave Applications"),
+					[__("Leave Type"), __("Dates"), __("Days"), __("Status")],
+					this.get_leave_application_rows_html(leave_applications),
+				)}
+				${this.get_app_switcher_html()}
+			</div>
+		`);
+	}
+
+	get_header_html(employee) {
+		return `
+			<div class="hr-dashboard-header">
+				${frappe.avatar(employee.user_id, "avatar-large")}
+				<div>
+					<h4>${__("Welcome, {0}", [frappe.utils.escape_html(employee.employee_name || "")])}</h4>
+					<div class="text-muted">${frappe.utils.escape_html(employee.designation || "")}</div>
+				</div>
+			</div>
+		`;
+	}
+
+	get_stat_cards_html(attendance, leave_applications) {
 		const present_days = attendance.filter((a) => a.status === "Present").length;
 		const total_hours = attendance
 			.reduce((sum, a) => sum + (a.working_hours || 0), 0)
 			.toFixed(1);
 
-		const leave_balance_cards =
-			Object.entries(leave_balance || {})
-				.map(
-					([leave_type, d]) => `
-						<div class="hr-dashboard-card">
-							<div class="hr-dashboard-stat-value">${d.balance_leaves ?? 0}</div>
-							<div class="hr-dashboard-stat-label">${frappe.utils.escape_html(leave_type)}</div>
+		const cards = [
+			{ icon: "calendar", value: present_days, label: __("Days Present") },
+			{ icon: "clock", value: total_hours, label: __("Working Hours") },
+			{
+				icon: "check-circle",
+				value: (leave_applications || []).length,
+				label: __("Leave Applications"),
+			},
+		];
+
+		return `
+			<div class="hr-dashboard-stats">
+				${cards
+					.map(
+						(c) => `
+							<div class="hr-stat-card">
+								<svg class="icon icon-md hr-stat-icon"><use href="#icon-${c.icon}"></use></svg>
+								<div>
+									<div class="hr-stat-value">${c.value}</div>
+									<div class="hr-stat-label">${c.label}</div>
+								</div>
+							</div>
+						`,
+					)
+					.join("")}
+			</div>
+		`;
+	}
+
+	get_leave_balance_html(leave_balance) {
+		const entries = Object.entries(leave_balance || {});
+		if (!entries.length) {
+			return `
+				<h5 class="hr-dashboard-section-title">${__("Leave Balance")}</h5>
+				<p class="text-muted">${__("No leave allocated")}</p>
+			`;
+		}
+
+		const cards = entries
+			.map(([leave_type, d], i) => {
+				const allocated = d.allocated_leaves || 0;
+				const balance = d.balance_leaves || 0;
+				const percent = allocated > 0 ? Math.min(100, Math.round((balance / allocated) * 100)) : 0;
+				const color = this.ring_colors[i % this.ring_colors.length];
+
+				return `
+					<div class="hr-leave-balance-card">
+						<svg class="hr-ring" viewBox="0 0 42 42">
+							<circle class="hr-ring-bg" cx="21" cy="21" r="15.91549431" />
+							<circle
+								class="hr-ring-value ${color}"
+								cx="21" cy="21" r="15.91549431"
+								stroke-dasharray="${percent} ${100 - percent}"
+							/>
+						</svg>
+						<div class="hr-ring-label">
+							<div class="hr-ring-value-text">${balance}</div>
+							<div class="text-muted">${frappe.utils.escape_html(leave_type)}</div>
 						</div>
-					`,
-				)
-				.join("") || `<p class="text-muted">${__("No leave allocated")}</p>`;
-
-		const attendance_rows =
-			attendance
-				.map(
-					(a) => `
-						<tr>
-							<td>${frappe.datetime.str_to_user(a.attendance_date)}</td>
-							<td>${frappe.utils.escape_html(a.status)}</td>
-							<td>${a.working_hours || 0}</td>
-						</tr>
-					`,
-				)
-				.join("") || `<tr><td colspan="3">${__("No records")}</td></tr>`;
-
-		const leave_rows =
-			(leave_applications || [])
-				.map(
-					(l) => `
-						<tr>
-							<td>${frappe.utils.escape_html(l.leave_type)}</td>
-							<td>${frappe.datetime.str_to_user(l.from_date)} - ${frappe.datetime.str_to_user(
-								l.to_date,
-							)}</td>
-							<td>${l.total_leave_days}</td>
-							<td>${frappe.utils.escape_html(l.status)}</td>
-						</tr>
-					`,
-				)
-				.join("") || `<tr><td colspan="4">${__("No records")}</td></tr>`;
-
-		this.wrapper.html(`
-			<div class="hr-dashboard-body">
-				<h4>${__("Welcome")}, ${frappe.utils.escape_html(employee.employee_name || "")}</h4>
-
-				<div class="hr-dashboard-row">
-					<div class="hr-dashboard-card">
-						<div class="hr-dashboard-stat-value">${present_days}</div>
-						<div class="hr-dashboard-stat-label">${__("Days Present")}</div>
 					</div>
-					<div class="hr-dashboard-card">
-						<div class="hr-dashboard-stat-value">${total_hours}</div>
-						<div class="hr-dashboard-stat-label">${__("Working Hours")}</div>
-					</div>
-					<div class="hr-dashboard-card">
-						<div class="hr-dashboard-stat-value">${(leave_applications || []).length}</div>
-						<div class="hr-dashboard-stat-label">${__("Leave Applications")}</div>
-					</div>
-				</div>
+				`;
+			})
+			.join("");
 
-				<h5>${__("Leave Balance")}</h5>
-				<div class="hr-dashboard-row">${leave_balance_cards}</div>
+		return `
+			<h5 class="hr-dashboard-section-title">${__("Leave Balance")}</h5>
+			<div class="hr-dashboard-leave-balance">${cards}</div>
+		`;
+	}
 
-				<h5>${__("Attendance")}</h5>
+	get_attendance_rows_html(attendance) {
+		if (!attendance.length) {
+			return `<tr><td colspan="3" class="text-muted">${__("No records")}</td></tr>`;
+		}
+
+		return attendance
+			.map((a) => {
+				const color = this.attendance_status_colors[a.status] || "gray";
+				return `
+					<tr>
+						<td>${frappe.datetime.str_to_user(a.attendance_date)}</td>
+						<td><span class="indicator-pill no-indicator-dot ${color}">${frappe.utils.escape_html(
+							a.status,
+						)}</span></td>
+						<td>${a.working_hours || 0}</td>
+					</tr>
+				`;
+			})
+			.join("");
+	}
+
+	get_leave_application_rows_html(leave_applications) {
+		if (!(leave_applications || []).length) {
+			return `<tr><td colspan="4" class="text-muted">${__("No records")}</td></tr>`;
+		}
+
+		return leave_applications
+			.map((l) => {
+				const color = this.leave_status_colors[l.status] || "gray";
+				return `
+					<tr>
+						<td>${frappe.utils.escape_html(l.leave_type)}</td>
+						<td>${frappe.datetime.str_to_user(l.from_date)} - ${frappe.datetime.str_to_user(
+							l.to_date,
+						)}</td>
+						<td>${l.total_leave_days}</td>
+						<td><span class="indicator-pill no-indicator-dot ${color}">${frappe.utils.escape_html(
+							l.status,
+						)}</span></td>
+					</tr>
+				`;
+			})
+			.join("");
+	}
+
+	get_table_section_html(title, headers, rows_html) {
+		return `
+			<h5 class="hr-dashboard-section-title">${title}</h5>
+			<div class="hr-dashboard-table-wrapper">
 				<table class="table table-bordered">
 					<thead>
-						<tr>
-							<th>${__("Date")}</th>
-							<th>${__("Status")}</th>
-							<th>${__("Working Hours")}</th>
-						</tr>
+						<tr>${headers.map((h) => `<th>${h}</th>`).join("")}</tr>
 					</thead>
-					<tbody>${attendance_rows}</tbody>
-				</table>
-
-				<h5>${__("Leave Applications")}</h5>
-				<table class="table table-bordered">
-					<thead>
-						<tr>
-							<th>${__("Leave Type")}</th>
-							<th>${__("Dates")}</th>
-							<th>${__("Days")}</th>
-							<th>${__("Status")}</th>
-						</tr>
-					</thead>
-					<tbody>${leave_rows}</tbody>
+					<tbody>${rows_html}</tbody>
 				</table>
 			</div>
-		`);
+		`;
+	}
+
+	get_app_switcher_html() {
+		const apps = [
+			{
+				title: __("Frappe HR"),
+				initials: "HR",
+				color: "var(--blue-500, #0289f7)",
+				route: "hr-setup",
+			},
+		];
+
+		if (frappe.boot.versions && frappe.boot.versions.erpnext) {
+			apps.push({
+				title: __("ERPNext"),
+				initials: "ERP",
+				color: "var(--green-500, #46b37e)",
+				route: "erpnext",
+			});
+		}
+
+		return `
+			<h5 class="hr-dashboard-section-title">${__("Switch App")}</h5>
+			<div class="hr-dashboard-apps">
+				${apps
+					.map(
+						(app) => `
+							<a class="hr-app-card" href="/app/${app.route}" data-route="${app.route}">
+								<div class="hr-app-card-badge" style="background: ${app.color}">${app.initials}</div>
+								<div class="hr-app-card-label">${app.title}</div>
+								<svg class="icon icon-sm hr-app-card-arrow"><use href="#icon-chevron-right"></use></svg>
+							</a>
+						`,
+					)
+					.join("")}
+			</div>
+		`;
 	}
 };

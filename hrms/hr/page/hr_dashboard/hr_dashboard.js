@@ -13,17 +13,6 @@ hrms.HRDashboard = class HRDashboard {
 		this.page = page;
 		this.wrapper = $('<div class="hr-dashboard"></div>').appendTo(this.page.main);
 
-		if (!this.is_eligible_employee()) {
-			// A stale `redirect-to` (e.g. from a session that expired while sitting on
-			// this page), a bookmark, or a typed-in URL can land a System Manager/HR
-			// Manager/HR User/non-employee account here even though hrms.hr.utils.
-			// get_employee_home_page never sends them here on login. There's no
-			// employee data to show them, so bounce to the normal Desk instead of
-			// rendering a page that can only ever error out.
-			frappe.set_route("");
-			return;
-		}
-
 		// Same indicator names Desk already uses for `indicator-pill`, so a
 		// status reads the same way here as it does everywhere else in the app.
 		this.ring_colors = ["blue", "green", "orange", "purple", "cyan", "pink"];
@@ -47,14 +36,6 @@ hrms.HRDashboard = class HRDashboard {
 		});
 		this.render_message(__("Loading..."));
 		this.fetch();
-	}
-
-	is_eligible_employee() {
-		// Mirrors the role check in hrms.hr.utils.get_employee_home_page.
-		const roles = frappe.user_roles || [];
-		const elevated_roles = ["System Manager", "HR Manager", "HR User"];
-		if (elevated_roles.some((role) => roles.includes(role))) return false;
-		return roles.includes("Employee");
 	}
 
 	fetch() {

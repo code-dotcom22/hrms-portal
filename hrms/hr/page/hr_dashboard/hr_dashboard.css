@@ -8,21 +8,47 @@
 }
 
 .hr-dashboard-section-title {
-	margin-top: 28px;
+	margin-top: 32px;
 	margin-bottom: 12px;
 }
 
-/* Header */
+/* Hero header */
 
-.hr-dashboard-header {
+.hr-dashboard-hero {
 	display: flex;
 	align-items: center;
-	gap: 12px;
-	margin-bottom: 20px;
+	gap: 16px;
+	margin-bottom: 24px;
+	padding: 20px 24px;
+	border-radius: var(--border-radius-lg, 12px);
+	background: linear-gradient(
+		135deg,
+		var(--blue-100, #e9f2ff) 0%,
+		var(--purple-100, #f4ebff) 100%
+	);
 }
 
-.hr-dashboard-header h4 {
+:root[data-theme="dark"] .hr-dashboard-hero,
+.dark .hr-dashboard-hero {
+	background: linear-gradient(
+		135deg,
+		rgba(2, 137, 247, 0.16) 0%,
+		rgba(156, 69, 227, 0.16) 100%
+	);
+}
+
+.hr-dashboard-hero-avatar {
+	flex-shrink: 0;
+	box-shadow: var(--shadow-sm);
+}
+
+.hr-dashboard-hero h4 {
 	margin: 0;
+}
+
+.hr-dashboard-hero-subtitle {
+	color: var(--text-muted);
+	margin-top: 2px;
 }
 
 /* Stat tiles */
@@ -36,20 +62,66 @@
 .hr-stat-card {
 	display: flex;
 	align-items: center;
-	gap: 12px;
+	gap: 14px;
 	border: 1px solid var(--border-color);
 	border-radius: var(--border-radius-md);
 	padding: 16px;
 	box-shadow: var(--shadow-sm);
+	transition: box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+.hr-stat-card:hover {
+	box-shadow: var(--shadow-md);
+	transform: translateY(-1px);
+}
+
+.hr-stat-icon-badge {
+	flex-shrink: 0;
+	width: 40px;
+	height: 40px;
+	border-radius: var(--border-radius-md);
+	display: flex;
+	align-items: center;
+	justify-content: center;
 }
 
 .hr-stat-icon {
-	flex-shrink: 0;
-	stroke: var(--text-muted);
+	stroke: currentColor;
+}
+
+/* Fallback hex values are sourced from frappe-ui's palette (colors.json) since
+   Frappe Desk core doesn't expose numbered color CSS variables in this repo. */
+.hr-stat-icon-badge.blue {
+	background: var(--blue-100, #e9f2ff);
+	color: var(--blue-600, #0067d2);
+}
+.hr-stat-icon-badge.green {
+	background: var(--green-100, #e5f6ec);
+	color: var(--green-600, #308a5d);
+}
+.hr-stat-icon-badge.purple {
+	background: var(--purple-100, #f4ebff);
+	color: var(--purple-600, #7d34bd);
+}
+
+:root[data-theme="dark"] .hr-stat-icon-badge.blue,
+.dark .hr-stat-icon-badge.blue {
+	background: rgba(2, 137, 247, 0.16);
+	color: var(--blue-400, #4bb2fb);
+}
+:root[data-theme="dark"] .hr-stat-icon-badge.green,
+.dark .hr-stat-icon-badge.green {
+	background: rgba(70, 179, 126, 0.16);
+	color: var(--green-400, #74d29c);
+}
+:root[data-theme="dark"] .hr-stat-icon-badge.purple,
+.dark .hr-stat-icon-badge.purple {
+	background: rgba(156, 69, 227, 0.16);
+	color: var(--purple-400, #c07eef);
 }
 
 .hr-stat-value {
-	font-size: 22px;
+	font-size: 24px;
 	font-weight: 600;
 	line-height: 1.2;
 }
@@ -71,15 +143,45 @@
 .hr-leave-balance-card {
 	display: flex;
 	align-items: center;
-	gap: 12px;
+	gap: 14px;
 	border: 1px solid var(--border-color);
 	border-radius: var(--border-radius-md);
 	padding: 14px 16px;
+	transition: box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+.hr-leave-balance-card:hover {
+	box-shadow: var(--shadow-md);
+	transform: translateY(-1px);
+}
+
+.hr-leave-balance-card.blue {
+	background: var(--blue-50, #f3f9ff);
+}
+.hr-leave-balance-card.green {
+	background: var(--green-50, #f1faf5);
+}
+.hr-leave-balance-card.orange {
+	background: var(--orange-50, #fef6ee);
+}
+.hr-leave-balance-card.purple {
+	background: var(--purple-50, #faf5ff);
+}
+.hr-leave-balance-card.cyan {
+	background: var(--cyan-50, #f0fafd);
+}
+.hr-leave-balance-card.pink {
+	background: var(--pink-50, #fef4fa);
+}
+
+:root[data-theme="dark"] .hr-leave-balance-card,
+.dark .hr-leave-balance-card {
+	background: var(--fg-color, #2e3337) !important;
 }
 
 .hr-ring {
-	width: 48px;
-	height: 48px;
+	width: 56px;
+	height: 56px;
 	flex-shrink: 0;
 	transform: rotate(-90deg);
 	transform-origin: center;
@@ -97,8 +199,6 @@
 	stroke-linecap: round;
 }
 
-/* Fallback hex values are sourced from frappe-ui's palette (colors.json) since
-   Frappe Desk core doesn't expose numbered color CSS variables in this repo. */
 .hr-ring-value.blue {
 	stroke: var(--blue-500, #0289f7);
 }
@@ -119,7 +219,7 @@
 }
 
 .hr-ring-value-text {
-	font-size: 16px;
+	font-size: 18px;
 	font-weight: 600;
 }
 
@@ -127,10 +227,44 @@
 
 .hr-dashboard-table-wrapper {
 	overflow-x: auto;
+	border: 1px solid var(--border-color);
+	border-radius: var(--border-radius-md);
+	box-shadow: var(--shadow-sm);
 }
 
 .hr-dashboard-table-wrapper table {
 	margin-bottom: 0;
+}
+
+.hr-dashboard-table-wrapper table.table-bordered {
+	border: none;
+}
+
+.hr-dashboard-table-wrapper table.table-bordered th,
+.hr-dashboard-table-wrapper table.table-bordered td {
+	border: none;
+	border-bottom: 1px solid var(--border-color);
+}
+
+.hr-dashboard-table-wrapper table.table-bordered tr:last-child td {
+	border-bottom: none;
+}
+
+.hr-dashboard-table-wrapper thead th {
+	background: var(--fg-color, #f9fafb);
+	color: var(--text-muted);
+	font-size: 12px;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.02em;
+}
+
+.hr-dashboard-table-wrapper tbody tr {
+	transition: background-color 0.1s ease;
+}
+
+.hr-dashboard-table-wrapper tbody tr:hover {
+	background: var(--fg-color, #f9fafb);
 }
 
 /* App switcher */
@@ -150,11 +284,12 @@
 	padding: 14px 16px;
 	color: inherit;
 	text-decoration: none;
-	transition: box-shadow 0.15s ease;
+	transition: box-shadow 0.15s ease, transform 0.15s ease;
 }
 
 .hr-app-card:hover {
 	box-shadow: var(--shadow-md);
+	transform: translateY(-1px);
 	color: inherit;
 	text-decoration: none;
 }

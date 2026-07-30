@@ -82,12 +82,16 @@ hrms.HRDashboard = class HRDashboard {
 	}
 
 	get_header_html(employee) {
+		const today = frappe.datetime.str_to_user(frappe.datetime.get_today());
 		return `
-			<div class="hr-dashboard-header">
-				${frappe.avatar(employee.user_id, "avatar-large")}
+			<div class="hr-dashboard-hero">
+				${frappe.avatar(employee.user_id, "avatar-large hr-dashboard-hero-avatar")}
 				<div>
 					<h4>${__("Welcome, {0}", [frappe.utils.escape_html(employee.employee_name || "")])}</h4>
-					<div class="text-muted">${frappe.utils.escape_html(employee.designation || "")}</div>
+					<div class="hr-dashboard-hero-subtitle">
+						${frappe.utils.escape_html(employee.designation || "")}
+						${employee.designation ? " · " : ""}${today}
+					</div>
 				</div>
 			</div>
 		`;
@@ -100,12 +104,13 @@ hrms.HRDashboard = class HRDashboard {
 			.toFixed(1);
 
 		const cards = [
-			{ icon: "calendar", value: present_days, label: __("Days Present") },
-			{ icon: "clock", value: total_hours, label: __("Working Hours") },
+			{ icon: "calendar", value: present_days, label: __("Days Present"), color: "blue" },
+			{ icon: "clock", value: total_hours, label: __("Working Hours"), color: "green" },
 			{
 				icon: "check-circle",
 				value: (leave_applications || []).length,
 				label: __("Leave Applications"),
+				color: "purple",
 			},
 		];
 
@@ -115,7 +120,9 @@ hrms.HRDashboard = class HRDashboard {
 					.map(
 						(c) => `
 							<div class="hr-stat-card">
-								<svg class="icon icon-md hr-stat-icon"><use href="#icon-${c.icon}"></use></svg>
+								<div class="hr-stat-icon-badge ${c.color}">
+									<svg class="icon icon-md hr-stat-icon"><use href="#icon-${c.icon}"></use></svg>
+								</div>
 								<div>
 									<div class="hr-stat-value">${c.value}</div>
 									<div class="hr-stat-label">${c.label}</div>
@@ -145,7 +152,7 @@ hrms.HRDashboard = class HRDashboard {
 				const color = this.ring_colors[i % this.ring_colors.length];
 
 				return `
-					<div class="hr-leave-balance-card">
+					<div class="hr-leave-balance-card ${color}">
 						<svg class="hr-ring" viewBox="0 0 42 42">
 							<circle class="hr-ring-bg" cx="21" cy="21" r="15.91549431" />
 							<circle

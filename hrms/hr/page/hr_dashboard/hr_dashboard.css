@@ -28,13 +28,12 @@
 /* Stat tiles */
 
 .hr-dashboard-stats {
-	display: flex;
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(200px, 260px));
 	gap: 12px;
-	flex-wrap: wrap;
 }
 
 .hr-stat-card {
-	flex: 1 1 200px;
 	display: flex;
 	align-items: center;
 	gap: 12px;
@@ -64,13 +63,12 @@
 /* Leave balance rings */
 
 .hr-dashboard-leave-balance {
-	display: flex;
-	gap: 16px;
-	flex-wrap: wrap;
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(200px, 260px));
+	gap: 12px;
 }
 
 .hr-leave-balance-card {
-	flex: 1 1 160px;
 	display: flex;
 	align-items: center;
 	gap: 12px;
@@ -138,13 +136,12 @@
 /* App switcher */
 
 .hr-dashboard-apps {
-	display: flex;
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(200px, 260px));
 	gap: 12px;
-	flex-wrap: wrap;
 }
 
 .hr-app-card {
-	flex: 1 1 200px;
 	display: flex;
 	align-items: center;
 	gap: 12px;

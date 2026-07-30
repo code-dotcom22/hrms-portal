@@ -90,7 +90,8 @@ def get_reports_to_employee_name(employee: str) -> str:
 
 
 def get_current_employee() -> str:
-	employee = get_current_employee_info().get("name")
+	info = get_current_employee_info()
+	employee = info.get("name") if info else None
 	if not employee:
 		frappe.throw(_("Employee not found"), frappe.PermissionError)
 	return employee

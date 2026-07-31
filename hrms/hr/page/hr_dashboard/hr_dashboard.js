@@ -3,7 +3,26 @@ frappe.pages["hr-dashboard"].on_page_load = function (wrapper) {
 		parent: wrapper,
 		title: __("My Dashboard"),
 		single_column: true,
+		// This is a landing hub, not a page "inside" Frappe HR -- the workspace nav
+		// would contradict the Switch App cards below. Same option frappe's own
+		// apps/desktop screen uses; it's re-evaluated on every page change, so the
+		// sidebar comes back as soon as you navigate into an app.
+		hide_sidebar: true,
 	});
+
+	// hide_sidebar takes the whole body sidebar with it, including the user menu that
+	// normally holds these, so put them back on the page's own menu. Settings is a
+	// lazy-loaded dialog rather than a route, so it's opened the same way the sidebar's
+	// own user menu opens it.
+	page.add_menu_item(__("Settings"), () => {
+		frappe
+			.require("user_settings_dialog.bundle.js")
+			.then(() => frappe.ui.show_user_settings("profile"))
+			.catch(() => {
+				frappe.msgprint(__("Could not open Settings. Please refresh the page."));
+			});
+	});
+	page.add_menu_item(__("Logout"), () => frappe.app.logout());
 
 	new hrms.HRDashboard(page);
 };
@@ -47,6 +66,26 @@ hrms.HRDashboard = class HRDashboard {
 			e.preventDefault();
 			frappe.set_route($(e.currentTarget).attr("data-route"));
 		});
+		this.wrapper.on("click", ".hr-notification-btn", (e) => {
+			e.stopPropagation();
+			this.toggle_notification_panel();
+		});
+		this.wrapper.on("click", ".hr-notification-mark-all", (e) => {
+			e.stopPropagation();
+			this.mark_all_notifications_read();
+		});
+		this.wrapper.on("click", ".hr-notification-item", (e) => {
+			this.open_notification($(e.currentTarget));
+		});
+
+		// Namespaced and rebound so repeat visits to the page don't stack handlers.
+		$(document)
+			.off("click.hr_dashboard")
+			.on("click.hr_dashboard", (e) => {
+				if (!$(e.target).closest(".hr-notification-wrap").length) {
+					this.wrapper.find(".hr-notification-panel").addClass("hidden");
+				}
+			});
 		this.render_message(__("Loading..."));
 		this.fetch();
 	}
@@ -98,6 +137,136 @@ hrms.HRDashboard = class HRDashboard {
 
 		// Charts need their containers present in the DOM before instantiation.
 		this.render_charts(attendance);
+		// Fetched separately so a slow/failing count never holds up the dashboard; the
+		// bell just stays unbadged.
+		this.update_notification_badge();
+	}
+
+	update_notification_badge() {
+		frappe.call({
+			method: "hrms.api.get_unread_notifications_count",
+			freeze: false,
+			callback: (r) => {
+				const count = r.message || 0;
+				const $badge = this.wrapper.find(".hr-notification-badge");
+
+				if (!count) {
+					$badge.addClass("hidden");
+					return;
+				}
+				$badge.text(count > 99 ? "99+" : count).removeClass("hidden");
+			},
+		});
+	}
+
+	toggle_notification_panel() {
+		const $panel = this.wrapper.find(".hr-notification-panel");
+
+		if (!$panel.hasClass("hidden")) {
+			$panel.addClass("hidden");
+			return;
+		}
+
+		$panel.removeClass("hidden");
+		this.load_notifications();
+	}
+
+	load_notifications() {
+		const $panel = this.wrapper.find(".hr-notification-panel");
+		$panel.html(`<div class="hr-notification-empty text-muted">${__("Loading...")}</div>`);
+
+		frappe.db
+			.get_list("PWA Notification", {
+				filters: { to_user: frappe.session.user },
+				fields: [
+					"name",
+					"message",
+					"read",
+					"creation",
+					"reference_document_type",
+					"reference_document_name",
+				],
+				order_by: "creation desc",
+				limit: 10,
+			})
+			.then((items) => this.render_notification_panel(items || []))
+			.catch(() => {
+				$panel.html(
+					`<div class="hr-notification-empty text-muted">${__(
+						"Could not load notifications.",
+					)}</div>`,
+				);
+			});
+	}
+
+	render_notification_panel(items) {
+		const $panel = this.wrapper.find(".hr-notification-panel");
+
+		if (!items.length) {
+			$panel.html(
+				`<div class="hr-notification-empty text-muted">${__(
+					"You have no notifications",
+				)}</div>`,
+			);
+			return;
+		}
+
+		const rows = items
+			.map(
+				(n) => `
+					<div
+						class="hr-notification-item ${n.read ? "" : "unread"}"
+						data-name="${frappe.utils.escape_html(n.name)}"
+						data-doctype="${frappe.utils.escape_html(n.reference_document_type || "")}"
+						data-docname="${frappe.utils.escape_html(n.reference_document_name || "")}"
+					>
+						<!-- Server-built message carrying <b> tags, same as the PWA renders. -->
+						<div class="hr-notification-message">${n.message || ""}</div>
+						<div class="hr-notification-time text-muted">${comment_when(n.creation)}</div>
+					</div>
+				`,
+			)
+			.join("");
+
+		$panel.html(`
+			<div class="hr-notification-panel-header">
+				<span>${__("Notifications")}</span>
+				<button class="btn btn-xs btn-default hr-notification-mark-all">
+					${__("Mark all as read")}
+				</button>
+			</div>
+			<div class="hr-notification-list">${rows}</div>
+		`);
+	}
+
+	mark_all_notifications_read() {
+		frappe.call({
+			method: "hrms.api.mark_all_notifications_as_read",
+			freeze: false,
+			callback: () => {
+				this.wrapper.find(".hr-notification-badge").addClass("hidden");
+				this.wrapper.find(".hr-notification-item").removeClass("unread");
+			},
+		});
+	}
+
+	open_notification($item) {
+		const doctype = $item.attr("data-doctype");
+		const docname = $item.attr("data-docname");
+
+		if ($item.hasClass("unread")) {
+			frappe.call({
+				method: "hrms.api.mark_notification_as_read",
+				args: { name: $item.attr("data-name") },
+				freeze: false,
+				callback: () => this.update_notification_badge(),
+			});
+			$item.removeClass("unread");
+		}
+
+		if (doctype && docname) {
+			frappe.set_route("Form", doctype, docname);
+		}
 	}
 
 	get_header_html(employee) {
@@ -111,6 +280,13 @@ hrms.HRDashboard = class HRDashboard {
 						${frappe.utils.escape_html(employee.designation || "")}
 						${employee.designation ? " · " : ""}${today}
 					</div>
+				</div>
+				<div class="hr-notification-wrap">
+					<button class="hr-notification-btn" title="${__("Notifications")}">
+						<svg class="icon icon-md"><use href="#icon-bell"></use></svg>
+						<span class="hr-notification-badge hidden"></span>
+					</button>
+					<div class="hr-notification-panel hidden"></div>
 				</div>
 			</div>
 		`;

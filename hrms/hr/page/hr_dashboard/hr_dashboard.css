@@ -241,6 +241,124 @@
 	font-weight: 600;
 }
 
+/* Notification bell */
+
+.hr-notification-wrap {
+	/* Pushed to the far edge of the hero, away from the avatar/name block. */
+	margin-left: auto;
+	align-self: flex-start;
+	position: relative;
+	flex-shrink: 0;
+}
+
+.hr-notification-btn {
+	position: relative;
+	display: block;
+	background: none;
+	border: none;
+	padding: 8px;
+	border-radius: var(--border-radius-md);
+	cursor: pointer;
+	color: inherit;
+	line-height: 0;
+}
+
+.hr-notification-btn:hover {
+	background: var(--gray-100);
+}
+
+:root[data-theme="dark"] .hr-notification-btn:hover,
+.dark .hr-notification-btn:hover {
+	background: rgba(255, 255, 255, 0.08);
+}
+
+.hr-notification-badge {
+	position: absolute;
+	top: 2px;
+	right: 2px;
+	min-width: 16px;
+	height: 16px;
+	padding: 0 4px;
+	border-radius: 999px;
+	background: var(--red-500, #e03636);
+	color: #fff;
+	font-size: 10px;
+	font-weight: 600;
+	line-height: 16px;
+	text-align: center;
+}
+
+.hr-notification-panel {
+	position: absolute;
+	top: calc(100% + 4px);
+	right: 0;
+	z-index: 10;
+	width: 320px;
+	max-width: 90vw;
+	background: var(--popover-bg, var(--card-bg));
+	border: 1px solid var(--border-color);
+	border-radius: var(--border-radius-md);
+	box-shadow: var(--shadow-lg);
+	overflow: hidden;
+}
+
+.hr-notification-panel-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+	padding: 10px 12px;
+	border-bottom: 1px solid var(--border-color);
+	font-weight: 600;
+	font-size: 13px;
+}
+
+.hr-notification-list {
+	max-height: 320px;
+	overflow-y: auto;
+}
+
+.hr-notification-item {
+	padding: 10px 12px;
+	border-bottom: 1px solid var(--border-color);
+	cursor: pointer;
+}
+
+.hr-notification-item:last-child {
+	border-bottom: none;
+}
+
+.hr-notification-item:hover {
+	background: var(--gray-100);
+}
+
+:root[data-theme="dark"] .hr-notification-item:hover,
+.dark .hr-notification-item:hover {
+	background: rgba(255, 255, 255, 0.06);
+}
+
+/* Unread rows get a left accent rather than a coloured background, so the
+   message text keeps full contrast in both themes. */
+.hr-notification-item.unread {
+	box-shadow: inset 2px 0 0 var(--blue-500, #0289f7);
+}
+
+.hr-notification-message {
+	font-size: 13px;
+	line-height: 1.4;
+}
+
+.hr-notification-time {
+	font-size: 11px;
+	margin-top: 2px;
+}
+
+.hr-notification-empty {
+	padding: 24px 12px;
+	text-align: center;
+	font-size: 13px;
+}
+
 /* Charts */
 
 .hr-dashboard-charts {

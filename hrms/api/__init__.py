@@ -129,6 +129,23 @@ def mark_all_notifications_as_read() -> None:
 
 
 @frappe.whitelist()
+def mark_notification_as_read(name: str) -> None:
+	"""Mark a single notification as read.
+
+	Employees only get read permission on PWA Notification, so this can't be done from
+	the client. Scoping the filter to the session user means someone else's notification
+	is simply a no-op rather than something we need to raise on.
+	"""
+	frappe.db.set_value(
+		"PWA Notification",
+		{"name": name, "to_user": frappe.session.user},
+		"read",
+		1,
+		update_modified=False,
+	)
+
+
+@frappe.whitelist()
 def are_push_notifications_enabled() -> bool:
 	try:
 		return frappe.db.get_single_value("Push Notification Settings", "enable_push_notification_relay")

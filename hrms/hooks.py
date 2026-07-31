@@ -76,6 +76,20 @@ doctype_js = {
 # HR/System Managers are excluded inside the function and keep the normal Desk
 get_website_user_home_page = "hrms.hr.utils.get_employee_home_page"
 
+# ...and a way back to it from anywhere in Desk, since nothing else routes there.
+# Declared as an Action rather than a Route because the settings dropdown spreads
+# navbar items through as-is, without mapping `route` -> `url` the way the help
+# dropdown does, so a Route item would render but never navigate on click.
+standard_navbar_items = [
+	{
+		"item_label": "My Dashboard",
+		"item_type": "Action",
+		"action": "frappe.set_route('/desk/hr-dashboard');",
+		"is_standard": 1,
+		"icon": "layout-dashboard",
+	},
+]
+
 calendars = ["Leave Application"]
 
 # Generators

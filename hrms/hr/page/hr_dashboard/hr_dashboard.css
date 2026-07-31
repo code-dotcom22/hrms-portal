@@ -103,6 +103,14 @@
 	background: var(--purple-100, #f4ebff);
 	color: var(--purple-600, #7d34bd);
 }
+.hr-stat-icon-badge.cyan {
+	background: var(--cyan-100, #ddf7ff);
+	color: var(--cyan-600, #32a4c7);
+}
+.hr-stat-icon-badge.orange {
+	background: var(--orange-100, #ffefe4);
+	color: var(--orange-600, #d45a08);
+}
 
 :root[data-theme="dark"] .hr-stat-icon-badge.blue,
 .dark .hr-stat-icon-badge.blue {
@@ -118,6 +126,16 @@
 .dark .hr-stat-icon-badge.purple {
 	background: rgba(156, 69, 227, 0.16);
 	color: var(--purple-400, #c07eef);
+}
+:root[data-theme="dark"] .hr-stat-icon-badge.cyan,
+.dark .hr-stat-icon-badge.cyan {
+	background: rgba(59, 189, 229, 0.16);
+	color: var(--cyan-400, #72d5f3);
+}
+:root[data-theme="dark"] .hr-stat-icon-badge.orange,
+.dark .hr-stat-icon-badge.orange {
+	background: rgba(232, 108, 19, 0.16);
+	color: var(--orange-400, #f4b07f);
 }
 
 .hr-stat-value {
@@ -221,6 +239,55 @@
 .hr-ring-value-text {
 	font-size: 18px;
 	font-weight: 600;
+}
+
+/* Charts */
+
+.hr-dashboard-charts {
+	display: grid;
+	/* Trend chart needs the room; the donut reads fine at a third of the width. */
+	grid-template-columns: 2fr 1fr;
+	gap: 12px;
+	margin-top: 24px;
+}
+
+@media (max-width: 900px) {
+	.hr-dashboard-charts {
+		grid-template-columns: 1fr;
+	}
+}
+
+.hr-chart-card {
+	border: 1px solid var(--border-color);
+	border-radius: var(--border-radius-md);
+	padding: 16px;
+	box-shadow: var(--shadow-sm);
+	min-width: 0;
+}
+
+.hr-chart-title {
+	font-weight: 600;
+	font-size: 13px;
+	margin-bottom: 4px;
+}
+
+/* frappe-charts sets its own inline margins; trim the surrounding whitespace. */
+.hr-chart .chart-container {
+	margin-bottom: 0;
+}
+
+/* Section headers */
+
+.hr-dashboard-section-header {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: 12px;
+}
+
+.hr-section-action {
+	font-size: 12px;
+	white-space: nowrap;
 }
 
 /* Tables */

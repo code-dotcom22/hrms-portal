@@ -30,6 +30,19 @@ hrms.HRDashboard = class HRDashboard {
 			Cancelled: "gray",
 		};
 
+		// frappe.Chart paints SVG fills directly, so it needs literal colors rather than
+		// the CSS variables the rest of the page uses. Same palette, resolved up front.
+		this.chart_hex = {
+			blue: "#0289f7",
+			green: "#46b37e",
+			orange: "#e86c13",
+			purple: "#9c45e3",
+			cyan: "#3bbde5",
+			pink: "#e34aa6",
+			red: "#e03636",
+			gray: "#999999",
+		};
+
 		this.wrapper.on("click", ".hr-app-card", (e) => {
 			e.preventDefault();
 			frappe.set_route($(e.currentTarget).attr("data-route"));
@@ -65,20 +78,26 @@ hrms.HRDashboard = class HRDashboard {
 			<div class="hr-dashboard-body">
 				${this.get_header_html(employee)}
 				${this.get_stat_cards_html(attendance, leave_applications)}
+				${this.get_charts_html(attendance)}
 				${this.get_leave_balance_html(leave_balance)}
 				${this.get_table_section_html(
-					__("Attendance"),
+					__("Recent Attendance"),
 					[__("Date"), __("Status"), __("Working Hours")],
 					this.get_attendance_rows_html(attendance),
+					`<a class="hr-section-action" href="/desk/attendance">${__("View All")}</a>`,
 				)}
 				${this.get_table_section_html(
 					__("Leave Applications"),
 					[__("Leave Type"), __("Dates"), __("Days"), __("Status")],
 					this.get_leave_application_rows_html(leave_applications),
+					`<a class="hr-section-action" href="/desk/leave-application">${__("View All")}</a>`,
 				)}
 				${this.get_app_switcher_html()}
 			</div>
 		`);
+
+		// Charts need their containers present in the DOM before instantiation.
+		this.render_charts(attendance);
 	}
 
 	get_header_html(employee) {
@@ -99,15 +118,23 @@ hrms.HRDashboard = class HRDashboard {
 
 	get_stat_cards_html(attendance, leave_applications) {
 		const present_days = attendance.filter((a) => a.status === "Present").length;
-		const total_hours = attendance
-			.reduce((sum, a) => sum + (a.working_hours || 0), 0)
-			.toFixed(1);
+		const hours_sum = attendance.reduce((sum, a) => sum + (a.working_hours || 0), 0);
+		const total_hours = hours_sum.toFixed(1);
+
+		// Only days that were actually worked count towards the average, so weekends and
+		// leave days don't drag it down.
+		const worked_days = attendance.filter((a) => a.working_hours > 0).length;
+		const avg_hours = worked_days ? (hours_sum / worked_days).toFixed(1) : 0;
+		const late_days = attendance.filter((a) => a.late_entry).length;
 
 		const cards = [
 			{ icon: "calendar", value: present_days, label: __("Days Present"), color: "blue" },
 			{ icon: "clock", value: total_hours, label: __("Working Hours"), color: "green" },
+			{ icon: "activity", value: avg_hours, label: __("Avg Hours / Day"), color: "cyan" },
+			{ icon: "alarm-clock", value: late_days, label: __("Late Arrivals"), color: "orange" },
 			{
-				icon: "check-circle",
+				// Lucide renamed check-circle -> circle-check; the old name renders blank.
+				icon: "circle-check",
 				value: (leave_applications || []).length,
 				label: __("Leave Applications"),
 				color: "purple",
@@ -133,6 +160,89 @@ hrms.HRDashboard = class HRDashboard {
 					.join("")}
 			</div>
 		`;
+	}
+
+	get_charts_html(attendance) {
+		if (!attendance.length) return "";
+
+		return `
+			<div class="hr-dashboard-charts">
+				<div class="hr-chart-card">
+					<div class="hr-chart-title">${__("Working Hours Trend")}</div>
+					<div class="hr-chart" data-chart="hours"></div>
+				</div>
+				<div class="hr-chart-card">
+					<div class="hr-chart-title">${__("Attendance Breakdown")}</div>
+					<div class="hr-chart" data-chart="status"></div>
+				</div>
+			</div>
+		`;
+	}
+
+	render_charts(attendance) {
+		// frappe.Chart ships with Desk (desk.bundle.js), but guard anyway so a missing
+		// global degrades to a chart-less dashboard rather than breaking the page.
+		if (!attendance.length || !frappe.Chart) return;
+
+		this.render_hours_chart(attendance);
+		this.render_status_chart(attendance);
+	}
+
+	render_hours_chart(attendance) {
+		const container = this.wrapper.find('[data-chart="hours"]')[0];
+		if (!container) return;
+
+		// API returns newest-first; a trend line has to read oldest -> newest.
+		const chronological = [...attendance].reverse();
+
+		new frappe.Chart(container, {
+			type: "bar",
+			height: 220,
+			colors: [this.chart_hex.blue],
+			animate: false,
+			axisOptions: { xAxisMode: "tick", yAxisMode: "span" },
+			barOptions: { spaceRatio: 0.4 },
+			tooltipOptions: {
+				formatTooltipY: (value) => `${value} ${__("hrs")}`,
+			},
+			data: {
+				// Day-of-month keeps the axis readable across a full month.
+				labels: chronological.map((a) => a.attendance_date.split("-")[2]),
+				datasets: [
+					{
+						name: __("Working Hours"),
+						values: chronological.map((a) => a.working_hours || 0),
+					},
+				],
+			},
+		});
+	}
+
+	render_status_chart(attendance) {
+		const container = this.wrapper.find('[data-chart="status"]')[0];
+		if (!container) return;
+
+		const counts = {};
+		attendance.forEach((a) => {
+			counts[a.status] = (counts[a.status] || 0) + 1;
+		});
+
+		const statuses = Object.keys(counts);
+		if (!statuses.length) return;
+
+		new frappe.Chart(container, {
+			type: "donut",
+			height: 220,
+			animate: false,
+			// Reuse the same status -> colour mapping as the table pills.
+			colors: statuses.map(
+				(s) => this.chart_hex[this.attendance_status_colors[s]] || this.chart_hex.gray,
+			),
+			data: {
+				labels: statuses.map((s) => __(s)),
+				datasets: [{ values: statuses.map((s) => counts[s]) }],
+			},
+		});
 	}
 
 	get_leave_balance_html(leave_balance) {
@@ -181,7 +291,10 @@ hrms.HRDashboard = class HRDashboard {
 			return `<tr><td colspan="3" class="text-muted">${__("No records")}</td></tr>`;
 		}
 
+		// The trend chart now covers the whole period, so the table only needs the tail
+		// end of it (API returns newest-first). "View All" covers the rest.
 		return attendance
+			.slice(0, 7)
 			.map((a) => {
 				const color = this.attendance_status_colors[a.status] || "gray";
 				return `
@@ -221,9 +334,12 @@ hrms.HRDashboard = class HRDashboard {
 			.join("");
 	}
 
-	get_table_section_html(title, headers, rows_html) {
+	get_table_section_html(title, headers, rows_html, action_html = "") {
 		return `
-			<h5 class="hr-dashboard-section-title">${title}</h5>
+			<div class="hr-dashboard-section-header">
+				<h5 class="hr-dashboard-section-title">${title}</h5>
+				${action_html}
+			</div>
 			<div class="hr-dashboard-table-wrapper">
 				<table class="table table-bordered">
 					<thead>

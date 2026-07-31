@@ -66,24 +66,14 @@ hrms.HRDashboard = class HRDashboard {
 			e.preventDefault();
 			frappe.set_route($(e.currentTarget).attr("data-route"));
 		});
-		this.wrapper.on("click", ".hr-notification-btn", (e) => {
-			e.stopPropagation();
-			this.toggle_notification_panel();
-		});
-		this.wrapper.on("click", ".hr-notification-mark-all", (e) => {
-			e.stopPropagation();
-			this.mark_all_notifications_read();
-		});
-		this.wrapper.on("click", ".hr-notification-item", (e) => {
-			this.open_notification($(e.currentTarget));
-		});
+		this.setup_notification_bell();
 
 		// Namespaced and rebound so repeat visits to the page don't stack handlers.
 		$(document)
 			.off("click.hr_dashboard")
 			.on("click.hr_dashboard", (e) => {
 				if (!$(e.target).closest(".hr-notification-wrap").length) {
-					this.wrapper.find(".hr-notification-panel").addClass("hidden");
+					this.$notification.find(".hr-notification-panel").addClass("hidden");
 				}
 			});
 		this.render_message(__("Loading..."));
@@ -142,13 +132,42 @@ hrms.HRDashboard = class HRDashboard {
 		this.update_notification_badge();
 	}
 
+	setup_notification_bell() {
+		// Lives in the page header next to the "..." menu rather than in the page body,
+		// so it sits where a notification bell is normally expected. custom_actions is
+		// the framework's slot for this and ships hidden until something is added.
+		this.$notification = $(`
+			<div class="hr-notification-wrap">
+				<button class="hr-notification-btn" title="${__("Notifications")}">
+					<svg class="icon icon-md"><use href="#icon-bell"></use></svg>
+					<span class="hr-notification-badge hidden"></span>
+				</button>
+				<div class="hr-notification-panel hidden"></div>
+			</div>
+		`).appendTo(this.page.custom_actions);
+
+		this.page.custom_actions.removeClass("hide");
+
+		this.$notification.on("click", ".hr-notification-btn", (e) => {
+			e.stopPropagation();
+			this.toggle_notification_panel();
+		});
+		this.$notification.on("click", ".hr-notification-mark-all", (e) => {
+			e.stopPropagation();
+			this.mark_all_notifications_read();
+		});
+		this.$notification.on("click", ".hr-notification-item", (e) => {
+			this.open_notification($(e.currentTarget));
+		});
+	}
+
 	update_notification_badge() {
 		frappe.call({
 			method: "hrms.api.get_unread_notifications_count",
 			freeze: false,
 			callback: (r) => {
 				const count = r.message || 0;
-				const $badge = this.wrapper.find(".hr-notification-badge");
+				const $badge = this.$notification.find(".hr-notification-badge");
 
 				if (!count) {
 					$badge.addClass("hidden");
@@ -160,7 +179,7 @@ hrms.HRDashboard = class HRDashboard {
 	}
 
 	toggle_notification_panel() {
-		const $panel = this.wrapper.find(".hr-notification-panel");
+		const $panel = this.$notification.find(".hr-notification-panel");
 
 		if (!$panel.hasClass("hidden")) {
 			$panel.addClass("hidden");
@@ -172,7 +191,7 @@ hrms.HRDashboard = class HRDashboard {
 	}
 
 	load_notifications() {
-		const $panel = this.wrapper.find(".hr-notification-panel");
+		const $panel = this.$notification.find(".hr-notification-panel");
 		$panel.html(`<div class="hr-notification-empty text-muted">${__("Loading...")}</div>`);
 
 		frappe.db
@@ -200,7 +219,7 @@ hrms.HRDashboard = class HRDashboard {
 	}
 
 	render_notification_panel(items) {
-		const $panel = this.wrapper.find(".hr-notification-panel");
+		const $panel = this.$notification.find(".hr-notification-panel");
 
 		if (!items.length) {
 			$panel.html(
@@ -244,8 +263,8 @@ hrms.HRDashboard = class HRDashboard {
 			method: "hrms.api.mark_all_notifications_as_read",
 			freeze: false,
 			callback: () => {
-				this.wrapper.find(".hr-notification-badge").addClass("hidden");
-				this.wrapper.find(".hr-notification-item").removeClass("unread");
+				this.$notification.find(".hr-notification-badge").addClass("hidden");
+				this.$notification.find(".hr-notification-item").removeClass("unread");
 			},
 		});
 	}
@@ -281,14 +300,7 @@ hrms.HRDashboard = class HRDashboard {
 						${employee.designation ? " · " : ""}${today}
 					</div>
 				</div>
-				<div class="hr-notification-wrap">
-					<button class="hr-notification-btn" title="${__("Notifications")}">
-						<svg class="icon icon-md"><use href="#icon-bell"></use></svg>
-						<span class="hr-notification-badge hidden"></span>
-					</button>
-					<div class="hr-notification-panel hidden"></div>
 				</div>
-			</div>
 		`;
 	}
 

@@ -1,5 +1,14 @@
 .hr-dashboard-body {
-	padding: 20px 0 40px;
+	/* hide_sidebar hands this page the whole viewport, so it needs more inset than a
+	   normal Desk page to stop the content running into the edges. */
+	padding: 20px var(--padding-xl, 30px) 40px;
+}
+
+@media (max-width: 600px) {
+	.hr-dashboard-body {
+		padding-left: var(--padding-md, 15px);
+		padding-right: var(--padding-md, 15px);
+	}
 }
 
 .hr-dashboard-message {
@@ -244,11 +253,11 @@
 /* Notification bell */
 
 .hr-notification-wrap {
-	/* Pushed to the far edge of the hero, away from the avatar/name block. */
-	margin-left: auto;
-	align-self: flex-start;
+	/* Anchors the dropdown; sits in the page header alongside the "..." menu. */
 	position: relative;
 	flex-shrink: 0;
+	display: flex;
+	align-items: center;
 }
 
 .hr-notification-btn {
@@ -363,8 +372,7 @@
 
 .hr-dashboard-charts {
 	display: grid;
-	/* Trend chart needs the room; the donut reads fine at a third of the width. */
-	grid-template-columns: 2fr 1fr;
+	grid-template-columns: 1fr 1fr;
 	gap: 12px;
 	margin-top: 24px;
 }

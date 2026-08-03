@@ -62,10 +62,16 @@ hrms.HRDashboard = class HRDashboard {
 			gray: "#999999",
 		};
 
+		// Every dated section reflects this range. Month-to-date is the default, and the
+		// server falls back to the same window when the args are omitted.
+		[this.from_date, this.to_date] = this.get_preset_range("this_month");
+
 		this.wrapper.on("click", ".hr-app-card", (e) => {
 			e.preventDefault();
 			frappe.set_route($(e.currentTarget).attr("data-route"));
 		});
+		this.setup_layout();
+		this.setup_filters();
 		this.setup_notification_bell();
 
 		// Namespaced and rebound so repeat visits to the page don't stack handlers.
@@ -78,58 +84,219 @@ hrms.HRDashboard = class HRDashboard {
 			});
 		this.render_message(__("Loading..."));
 		this.fetch();
+		// Fetched separately so a slow/failing count never holds up the dashboard; the
+		// bell just stays unbadged. Unaffected by the date range, so it runs once.
+		this.update_notification_badge();
+	}
+
+	setup_layout() {
+		// The hero and the filter bar outlive a range change -- only the sections below
+		// them are re-rendered -- so the date controls keep their state and focus.
+		this.wrapper.html(`
+			<div class="hr-dashboard-body">
+				<div class="hr-dashboard-hero-slot"></div>
+				<div class="hr-dashboard-filter-bar"></div>
+				<div class="hr-dashboard-content"></div>
+			</div>
+		`);
+
+		this.$hero = this.wrapper.find(".hr-dashboard-hero-slot");
+		this.$filters = this.wrapper.find(".hr-dashboard-filter-bar");
+		this.$content = this.wrapper.find(".hr-dashboard-content");
 	}
 
 	fetch() {
+		// A slow response for an earlier range must not overwrite a newer one.
+		const token = (this.fetch_token = (this.fetch_token || 0) + 1);
+		this.$content.addClass("hr-dashboard-loading");
+
 		frappe.call({
 			method: "hrms.api.get_employee_login_summary",
+			args: { from_date: this.from_date, to_date: this.to_date },
 			freeze: false,
 			callback: (r) => {
+				if (token !== this.fetch_token) return;
+				this.$content.removeClass("hr-dashboard-loading");
+
 				if (r.message) {
 					this.data = r.message;
 					this.render();
 				}
 			},
 			error: () => {
+				if (token !== this.fetch_token) return;
+				this.$content.removeClass("hr-dashboard-loading");
 				this.render_message(__("Could not load your dashboard."));
 			},
 		});
 	}
 
 	render_message(text) {
-		this.wrapper.html(`<div class="hr-dashboard-message text-muted">${text}</div>`);
+		this.$content.html(`<div class="hr-dashboard-message text-muted">${text}</div>`);
 	}
 
 	render() {
 		const { employee, attendance, leave_applications, leave_balance } = this.data;
 
-		this.wrapper.html(`
-			<div class="hr-dashboard-body">
-				${this.get_header_html(employee)}
-				${this.get_stat_cards_html(attendance, leave_applications)}
-				${this.get_charts_html(attendance)}
-				${this.get_leave_balance_html(leave_balance)}
-				${this.get_table_section_html(
-					__("Recent Attendance"),
-					[__("Date"), __("Status"), __("Working Hours")],
-					this.get_attendance_rows_html(attendance),
-					`<a class="hr-section-action" href="/desk/attendance">${__("View All")}</a>`,
-				)}
-				${this.get_table_section_html(
-					__("Leave Applications"),
-					[__("Leave Type"), __("Dates"), __("Days"), __("Status")],
-					this.get_leave_application_rows_html(leave_applications),
-					`<a class="hr-section-action" href="/desk/leave-application">${__("View All")}</a>`,
-				)}
-				${this.get_app_switcher_html()}
-			</div>
+		this.$hero.html(this.get_header_html(employee));
+		this.$content.html(`
+			${this.get_stat_cards_html(attendance, leave_applications)}
+			${this.get_charts_html(attendance)}
+			${this.get_leave_balance_html(leave_balance)}
+			${this.get_table_section_html(
+				__("Attendance"),
+				[__("Date"), __("Status"), __("Working Hours")],
+				this.get_attendance_rows_html(attendance),
+				`<a class="hr-section-action" href="/desk/attendance">${__("View All")}</a>`,
+			)}
+			${this.get_table_section_html(
+				__("Leave Applications"),
+				[__("Leave Type"), __("Dates"), __("Days"), __("Status")],
+				this.get_leave_application_rows_html(leave_applications),
+				`<a class="hr-section-action" href="/desk/leave-application">${__("View All")}</a>`,
+			)}
+			${this.get_app_switcher_html()}
 		`);
 
 		// Charts need their containers present in the DOM before instantiation.
 		this.render_charts(attendance);
-		// Fetched separately so a slow/failing count never holds up the dashboard; the
-		// bell just stays unbadged.
-		this.update_notification_badge();
+	}
+
+	// Date range
+
+	setup_filters() {
+		this.presets = [
+			{ key: "this_month", label: __("This Month") },
+			{ key: "last_month", label: __("Last Month") },
+			{ key: "last_3_months", label: __("Last 3 Months") },
+			{ key: "this_year", label: __("This Year") },
+		];
+
+		this.$filters.html(`
+			<div class="hr-date-presets">
+				${this.presets
+					.map(
+						(p) => `
+							<button type="button" class="hr-date-preset" data-preset="${p.key}">
+								${p.label}
+							</button>
+						`,
+					)
+					.join("")}
+			</div>
+			<div class="hr-date-inputs">
+				${this.get_date_input_html("from_date", __("From Date"))}
+				${this.get_date_input_html("to_date", __("To Date"))}
+			</div>
+		`);
+
+		// Native date inputs rather than Desk's Date control: their value is always
+		// ISO regardless of the user's display date format, which is exactly what the
+		// API wants, and the browser handles the picker and keyboard entry.
+		this.$from = this.$filters.find('[data-field="from_date"]');
+		this.$to = this.$filters.find('[data-field="to_date"]');
+		this.$from.val(this.from_date);
+		this.$to.val(this.to_date);
+
+		this.$filters.on("click", ".hr-date-preset", (e) => {
+			this.apply_preset($(e.currentTarget).attr("data-preset"));
+		});
+		this.$filters.on("change", ".hr-date-input", () => this.on_date_change());
+		this.sync_preset_state();
+	}
+
+	get_date_input_html(fieldname, label) {
+		return `
+			<label class="hr-date-field">
+				<span class="hr-date-label">${label}</span>
+				<input
+					type="date"
+					class="form-control input-with-feedback hr-date-input"
+					data-field="${fieldname}"
+					aria-label="${label}"
+				>
+			</label>
+		`;
+	}
+
+	get_preset_range(key) {
+		const today = frappe.datetime.get_today();
+		const on_today = () => moment(today);
+		const as_date = (m) => m.format("YYYY-MM-DD");
+
+		switch (key) {
+			case "last_month": {
+				const last_month = on_today().subtract(1, "month");
+				return [
+					as_date(last_month.clone().startOf("month")),
+					as_date(last_month.endOf("month")),
+				];
+			}
+			case "last_3_months":
+				// Inclusive of the current month, so "3 months" counts three month labels.
+				return [as_date(on_today().subtract(2, "month").startOf("month")), today];
+			case "this_year":
+				return [as_date(on_today().startOf("year")), today];
+			default:
+				return [as_date(on_today().startOf("month")), today];
+		}
+	}
+
+	apply_preset(key) {
+		const [from_date, to_date] = this.get_preset_range(key);
+		if (from_date === this.from_date && to_date === this.to_date) return;
+
+		this.from_date = from_date;
+		this.to_date = to_date;
+		this.$from.val(from_date);
+		this.$to.val(to_date);
+		this.sync_preset_state();
+		this.fetch();
+	}
+
+	on_date_change() {
+		const from_date = this.$from.val();
+		const to_date = this.$to.val();
+
+		// A cleared or half-entered date reads as "". Re-picking the date that was
+		// already set still fires change, so a no-op stops here rather than refetching.
+		if (!from_date || !to_date) return;
+		if (from_date === this.from_date && to_date === this.to_date) return;
+
+		const revert = (message) => {
+			frappe.show_alert({ message: message, indicator: "orange" });
+			this.$from.val(this.from_date);
+			this.$to.val(this.to_date);
+		};
+
+		// Native date inputs give ISO values, so a string compare is a date compare.
+		if (from_date > to_date) {
+			revert(__("From Date cannot be after To Date"));
+			return;
+		}
+
+		// Mirrors the server's cap; the attendance query behind this is unpaged.
+		if (moment(to_date).diff(moment(from_date), "days") > 366) {
+			revert(__("Please select a range of one year or less"));
+			return;
+		}
+
+		this.from_date = from_date;
+		this.to_date = to_date;
+		this.sync_preset_state();
+		this.fetch();
+	}
+
+	sync_preset_state() {
+		// A hand-picked range that happens to match a preset still lights it up, which
+		// saves carrying a separate "Custom" chip.
+		const match = this.presets.find((p) => {
+			const [from_date, to_date] = this.get_preset_range(p.key);
+			return from_date === this.from_date && to_date === this.to_date;
+		});
+
+		this.$filters.find(".hr-date-preset").removeClass("active");
+		if (match) this.$filters.find(`[data-preset="${match.key}"]`).addClass("active");
 	}
 
 	setup_notification_bell() {
@@ -383,6 +550,12 @@ hrms.HRDashboard = class HRDashboard {
 		// API returns newest-first; a trend line has to read oldest -> newest.
 		const chronological = [...attendance].reverse();
 
+		// Day-of-month alone keeps the axis readable within a single month, but repeats
+		// itself once the selected range spans more than one.
+		const months = new Set(chronological.map((a) => a.attendance_date.slice(0, 7)));
+		const format_label = (date) =>
+			months.size > 1 ? moment(date).format("D MMM") : date.split("-")[2];
+
 		new frappe.Chart(container, {
 			type: "bar",
 			height: 220,
@@ -394,8 +567,7 @@ hrms.HRDashboard = class HRDashboard {
 				formatTooltipY: (value) => `${value} ${__("hrs")}`,
 			},
 			data: {
-				// Day-of-month keeps the axis readable across a full month.
-				labels: chronological.map((a) => a.attendance_date.split("-")[2]),
+				labels: chronological.map((a) => format_label(a.attendance_date)),
 				datasets: [
 					{
 						name: __("Working Hours"),
@@ -434,10 +606,19 @@ hrms.HRDashboard = class HRDashboard {
 	}
 
 	get_leave_balance_html(leave_balance) {
+		// Balances come from the active leave allocation period, not the selected range,
+		// so the heading says so rather than looking like it failed to update.
+		const heading = `
+			<div class="hr-dashboard-section-header">
+				<h5 class="hr-dashboard-section-title">${__("Leave Balance")}</h5>
+				<span class="hr-section-note text-muted">${__("Current leave period")}</span>
+			</div>
+		`;
+
 		const entries = Object.entries(leave_balance || {});
 		if (!entries.length) {
 			return `
-				<h5 class="hr-dashboard-section-title">${__("Leave Balance")}</h5>
+				${heading}
 				<p class="text-muted">${__("No leave allocated")}</p>
 			`;
 		}
@@ -469,7 +650,7 @@ hrms.HRDashboard = class HRDashboard {
 			.join("");
 
 		return `
-			<h5 class="hr-dashboard-section-title">${__("Leave Balance")}</h5>
+			${heading}
 			<div class="hr-dashboard-leave-balance">${cards}</div>
 		`;
 	}

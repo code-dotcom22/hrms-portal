@@ -26,6 +26,8 @@ SUPPORTED_FIELD_TYPES = [
 	"Currency",
 ]
 
+MAX_SUMMARY_RANGE_DAYS = 366
+
 
 @frappe.whitelist()
 def get_current_user_info() -> dict:
@@ -162,11 +164,25 @@ def get_employee_login_summary(from_date: str | None = None, to_date: str | None
 	Meant to be called once by the client right after a session is established
 	via /api/method/login, so the client isn't hunting through Attendance,
 	Leave Application and Leave Allocation separately.
+
+	Both dates are optional and default to the current month to date. The dashboard
+	passes an explicit range when the user picks one.
 	"""
 	employee = get_current_employee()
 
 	to_date = getdate(to_date) if to_date else getdate()
 	from_date = getdate(from_date) if from_date else get_first_day(to_date)
+
+	if from_date > to_date:
+		frappe.throw(_("From Date cannot be after To Date"), frappe.ValidationError)
+
+	# The attendance query below is unpaged, so a caller-supplied range needs an upper
+	# bound; a year covers every range the dashboard offers.
+	if date_diff(to_date, from_date) > MAX_SUMMARY_RANGE_DAYS:
+		frappe.throw(
+			_("Please select a range of {0} days or less").format(MAX_SUMMARY_RANGE_DAYS),
+			frappe.ValidationError,
+		)
 
 	return frappe._dict(
 		employee=get_current_employee_info(),

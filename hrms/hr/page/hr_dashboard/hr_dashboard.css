@@ -60,6 +60,97 @@
 	margin-top: 2px;
 }
 
+/* Date range filter */
+
+.hr-dashboard-filter-bar {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: flex-end;
+	justify-content: space-between;
+	gap: 12px;
+	margin-bottom: 20px;
+}
+
+.hr-date-presets {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+}
+
+.hr-date-preset {
+	background: var(--fg-color, #f9fafb);
+	border: 1px solid var(--border-color);
+	border-radius: var(--border-radius-md);
+	padding: 5px 12px;
+	font-size: 12px;
+	font-weight: 500;
+	color: var(--text-muted);
+	white-space: nowrap;
+	cursor: pointer;
+	transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.hr-date-preset:hover {
+	color: var(--text-color);
+	border-color: var(--gray-400);
+}
+
+.hr-date-preset.active {
+	background: var(--blue-500, #0289f7);
+	border-color: var(--blue-500, #0289f7);
+	color: #fff;
+}
+
+.hr-date-inputs {
+	display: flex;
+	align-items: flex-end;
+	gap: 8px;
+}
+
+.hr-date-field {
+	display: block;
+	width: 150px;
+	margin-bottom: 0;
+}
+
+.hr-date-label {
+	display: block;
+	color: var(--text-muted);
+	font-size: 11px;
+	font-weight: normal;
+	margin-bottom: 2px;
+}
+
+/* Keeps the browser's own calendar popup and its icon in the page's theme. */
+.hr-date-input {
+	color-scheme: light;
+}
+
+:root[data-theme="dark"] .hr-date-input,
+.dark .hr-date-input {
+	color-scheme: dark;
+}
+
+@media (max-width: 600px) {
+	.hr-dashboard-filter-bar {
+		flex-direction: column;
+		align-items: stretch;
+	}
+
+	.hr-date-field {
+		flex: 1;
+		width: auto;
+	}
+}
+
+/* Range-dependent sections dim while the new range loads, so the page doesn't
+   collapse back to a bare "Loading..." on every change. */
+.hr-dashboard-loading {
+	opacity: 0.45;
+	pointer-events: none;
+	transition: opacity 0.15s ease;
+}
+
 /* Stat tiles */
 
 .hr-dashboard-stats {
@@ -411,7 +502,8 @@
 	gap: 12px;
 }
 
-.hr-section-action {
+.hr-section-action,
+.hr-section-note {
 	font-size: 12px;
 	white-space: nowrap;
 }

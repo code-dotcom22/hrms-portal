@@ -480,13 +480,11 @@ hrms.HRDashboard = class HRDashboard {
 		// leave days don't drag it down.
 		const worked_days = attendance.filter((a) => a.working_hours > 0).length;
 		const avg_hours = worked_days ? (hours_sum / worked_days).toFixed(1) : 0;
-		const late_days = attendance.filter((a) => a.late_entry).length;
 
 		const cards = [
 			{ icon: "calendar", value: present_days, label: __("Days Present"), color: "blue" },
 			{ icon: "clock", value: total_hours, label: __("Working Hours"), color: "green" },
 			{ icon: "activity", value: avg_hours, label: __("Avg Hours / Day"), color: "cyan" },
-			{ icon: "alarm-clock", value: late_days, label: __("Late Arrivals"), color: "orange" },
 			{
 				// Lucide renamed check-circle -> circle-check; the old name renders blank.
 				icon: "circle-check",

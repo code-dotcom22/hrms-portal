@@ -155,11 +155,34 @@ hrms.HRDashboard = class HRDashboard {
 	// picked anyone yet, or (rarer) a session with no linked Employee at all.
 	render_no_employee_state() {
 		this.$hero.html("");
-		this.render_message(
-			this.is_hr_admin
-				? __("Select an employee above to view their dashboard.")
-				: __("No employee record is linked to your account. Please contact HR."),
-		);
+
+		if (!this.is_hr_admin) {
+			this.render_message(__("No employee record is linked to your account. Please contact HR."));
+			return;
+		}
+
+		// Points back at the picker by name ("above") rather than assuming the
+		// reader will connect a floating message to a field further up the page.
+		this.$content.html(`
+			<div class="hr-dashboard-empty-state">
+				<svg class="icon icon-lg hr-dashboard-empty-state-icon"><use href="#icon-users"></use></svg>
+				<h5>${__("No employee selected")}</h5>
+				<p class="text-muted">
+					${__("Use the Employee field above to search for someone and view their attendance, leave and working hours.")}
+				</p>
+			</div>
+		`);
+
+		// A brief highlight plus a focused cursor -- rather than relying on the
+		// text alone -- so it's obvious at a glance where "above" means.
+		this.$filters.find(".hr-employee-picker-field").addClass("hr-employee-picker-attention");
+		if (this.employee_control) {
+			if (typeof this.employee_control.set_focus === "function") {
+				this.employee_control.set_focus();
+			} else if (this.employee_control.$input) {
+				this.employee_control.$input.trigger("focus");
+			}
+		}
 	}
 
 	render() {
@@ -174,6 +197,7 @@ hrms.HRDashboard = class HRDashboard {
 		// picked yet (an admin who also has their own Employee record opens on it).
 		if (this.is_hr_admin) {
 			this.selected_employee = employee.name;
+			this.$filters.find(".hr-employee-picker-field").removeClass("hr-employee-picker-attention");
 			if (this.employee_control && this.employee_control.get_value() !== employee.name) {
 				this.employee_control.set_value(employee.name);
 			}
@@ -250,6 +274,8 @@ hrms.HRDashboard = class HRDashboard {
 	}
 
 	setup_employee_picker() {
+		const $field = this.$filters.find(".hr-employee-picker-field");
+
 		// A standard Link control rather than a hand-rolled dropdown: it gets
 		// search-as-you-type and permission-respecting results for free, the same
 		// way Desk's own Link fields do -- so a restricted HR User only ever sees
@@ -260,7 +286,7 @@ hrms.HRDashboard = class HRDashboard {
 				fieldtype: "Link",
 				options: "Employee",
 				label: __("Employee"),
-				placeholder: __("View another employee's dashboard"),
+				placeholder: __("Search employees by name or ID"),
 				get_query: () => ({ filters: { status: "Active" } }),
 				onchange: () => {
 					const value = this.employee_control.get_value() || null;
@@ -269,10 +295,19 @@ hrms.HRDashboard = class HRDashboard {
 					this.fetch();
 				},
 			},
-			parent: this.$filters.find(".hr-employee-picker-field").get(0),
+			parent: $field.get(0),
 			render_input: true,
 		});
 		this.employee_control.refresh();
+
+		// Stated up front, not just when the page is otherwise empty -- an admin who
+		// opens on their own record wouldn't otherwise learn this field can browse
+		// other employees at all.
+		$(`
+			<div class="hr-employee-picker-hint text-muted">
+				${__("Look up any employee to view their dashboard")}
+			</div>
+		`).appendTo($field);
 	}
 
 	get_date_input_html(fieldname, label) {

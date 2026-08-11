@@ -129,6 +129,49 @@
 	margin-bottom: 2px;
 }
 
+.hr-employee-picker-hint {
+	font-size: 11px;
+	margin-top: 4px;
+	max-width: 320px;
+}
+
+/* Draws the eye up to the field for a couple of beats when the page has
+   nothing else to show yet, then settles into a steady highlighted border. */
+.hr-employee-picker-attention .form-control {
+	border-color: var(--blue-400, #4bb2fb);
+	animation: hr-employee-picker-pulse 1.4s ease-in-out 2;
+}
+
+@keyframes hr-employee-picker-pulse {
+	0%,
+	100% {
+		box-shadow: 0 0 0 0 rgba(2, 137, 247, 0.35);
+	}
+	50% {
+		box-shadow: 0 0 0 5px rgba(2, 137, 247, 0.16);
+	}
+}
+
+/* "No employee selected" panel */
+
+.hr-dashboard-empty-state {
+	max-width: 420px;
+	margin: 60px auto 0;
+	padding: 0 20px;
+	text-align: center;
+}
+
+.hr-dashboard-empty-state-icon {
+	width: 40px;
+	height: 40px;
+	stroke: var(--text-muted);
+	margin-bottom: 12px;
+}
+
+.hr-dashboard-empty-state h5 {
+	margin: 0 0 6px;
+}
+
 .hr-date-field {
 	display: block;
 	width: 150px;

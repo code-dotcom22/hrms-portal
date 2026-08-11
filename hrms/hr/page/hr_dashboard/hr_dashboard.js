@@ -32,6 +32,12 @@ hrms.HRDashboard = class HRDashboard {
 		this.page = page;
 		this.wrapper = $('<div class="hr-dashboard"></div>').appendTo(this.page.main);
 
+		// HR/admin roles get an employee picker so they can browse anyone's dashboard
+		// instead of only their own -- same set hrms.hr.utils.get_employee_home_page
+		// already treats as "elevated" when deciding who lands here on login.
+		this.is_hr_admin = this.has_elevated_role();
+		this.selected_employee = null;
+
 		// Same indicator names Desk already uses for `indicator-pill`, so a
 		// status reads the same way here as it does everywhere else in the app.
 		this.ring_colors = ["blue", "green", "orange", "purple", "cyan", "pink"];
@@ -89,6 +95,11 @@ hrms.HRDashboard = class HRDashboard {
 		this.update_notification_badge();
 	}
 
+	has_elevated_role() {
+		const roles = frappe.user_roles || [];
+		return ["System Manager", "HR Manager", "HR User"].some((role) => roles.includes(role));
+	}
+
 	setup_layout() {
 		// The hero and the filter bar outlive a range change -- only the sections below
 		// them are re-rendered -- so the date controls keep their state and focus.
@@ -110,9 +121,14 @@ hrms.HRDashboard = class HRDashboard {
 		const token = (this.fetch_token = (this.fetch_token || 0) + 1);
 		this.$content.addClass("hr-dashboard-loading");
 
+		const args = { from_date: this.from_date, to_date: this.to_date };
+		// Omitted for everyone else, and for an admin who hasn't picked anyone yet --
+		// the server then falls back to the logged-in employee, same as before.
+		if (this.is_hr_admin && this.selected_employee) args.employee = this.selected_employee;
+
 		frappe.call({
 			method: "hrms.api.get_employee_login_summary",
-			args: { from_date: this.from_date, to_date: this.to_date },
+			args,
 			freeze: false,
 			callback: (r) => {
 				if (token !== this.fetch_token) return;
@@ -135,8 +151,33 @@ hrms.HRDashboard = class HRDashboard {
 		this.$content.html(`<div class="hr-dashboard-message text-muted">${text}</div>`);
 	}
 
+	// Reached when the server has no Employee to report on: an admin who hasn't
+	// picked anyone yet, or (rarer) a session with no linked Employee at all.
+	render_no_employee_state() {
+		this.$hero.html("");
+		this.render_message(
+			this.is_hr_admin
+				? __("Select an employee above to view their dashboard.")
+				: __("No employee record is linked to your account. Please contact HR."),
+		);
+	}
+
 	render() {
 		const { employee, attendance, leave_applications, leave_balance } = this.data;
+
+		if (!employee) {
+			this.render_no_employee_state();
+			return;
+		}
+
+		// Keeps the picker showing who's on screen even when nobody's explicitly
+		// picked yet (an admin who also has their own Employee record opens on it).
+		if (this.is_hr_admin) {
+			this.selected_employee = employee.name;
+			if (this.employee_control && this.employee_control.get_value() !== employee.name) {
+				this.employee_control.set_value(employee.name);
+			}
+		}
 
 		this.$hero.html(this.get_header_html(employee));
 		this.$content.html(`
@@ -173,6 +214,7 @@ hrms.HRDashboard = class HRDashboard {
 		];
 
 		this.$filters.html(`
+			${this.is_hr_admin ? '<div class="hr-employee-picker-field"></div>' : ""}
 			<div class="hr-date-presets">
 				${this.presets
 					.map(
@@ -198,11 +240,39 @@ hrms.HRDashboard = class HRDashboard {
 		this.$from.val(this.from_date);
 		this.$to.val(this.to_date);
 
+		if (this.is_hr_admin) this.setup_employee_picker();
+
 		this.$filters.on("click", ".hr-date-preset", (e) => {
 			this.apply_preset($(e.currentTarget).attr("data-preset"));
 		});
 		this.$filters.on("change", ".hr-date-input", () => this.on_date_change());
 		this.sync_preset_state();
+	}
+
+	setup_employee_picker() {
+		// A standard Link control rather than a hand-rolled dropdown: it gets
+		// search-as-you-type and permission-respecting results for free, the same
+		// way Desk's own Link fields do -- so a restricted HR User only ever sees
+		// employees they could already open the Employee form for.
+		this.employee_control = frappe.ui.form.make_control({
+			df: {
+				fieldname: "employee",
+				fieldtype: "Link",
+				options: "Employee",
+				label: __("Employee"),
+				placeholder: __("View another employee's dashboard"),
+				get_query: () => ({ filters: { status: "Active" } }),
+				onchange: () => {
+					const value = this.employee_control.get_value() || null;
+					if (value === this.selected_employee) return;
+					this.selected_employee = value;
+					this.fetch();
+				},
+			},
+			parent: this.$filters.find(".hr-employee-picker-field").get(0),
+			render_input: true,
+		});
+		this.employee_control.refresh();
 	}
 
 	get_date_input_html(fieldname, label) {
@@ -457,11 +527,17 @@ hrms.HRDashboard = class HRDashboard {
 
 	get_header_html(employee) {
 		const today = frappe.datetime.str_to_user(frappe.datetime.get_today());
+		const name = frappe.utils.escape_html(employee.employee_name || "");
+		// An admin browsing someone else's data gets a title that makes whose
+		// dashboard this is unmistakable, rather than a first-person "Welcome".
+		const is_self = employee.user_id === frappe.session.user;
+		const heading = is_self ? __("Welcome, {0}", [name]) : __("{0}'s Dashboard", [name]);
+
 		return `
 			<div class="hr-dashboard-hero">
 				${frappe.avatar(employee.user_id, "avatar-large hr-dashboard-hero-avatar")}
 				<div>
-					<h4>${__("Welcome, {0}", [frappe.utils.escape_html(employee.employee_name || "")])}</h4>
+					<h4>${heading}</h4>
 					<div class="hr-dashboard-hero-subtitle">
 						${frappe.utils.escape_html(employee.designation || "")}
 						${employee.designation ? " · " : ""}${today}

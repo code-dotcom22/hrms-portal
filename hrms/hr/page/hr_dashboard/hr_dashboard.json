@@ -12,6 +12,12 @@
   },
   {
    "role": "System Manager"
+  },
+  {
+   "role": "HR Manager"
+  },
+  {
+   "role": "HR User"
   }
  ],
  "standard": "Yes",

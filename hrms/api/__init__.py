@@ -28,6 +28,17 @@ SUPPORTED_FIELD_TYPES = [
 
 MAX_SUMMARY_RANGE_DAYS = 366
 
+EMPLOYEE_SUMMARY_FIELDS = [
+	"name",
+	"first_name",
+	"employee_name",
+	"designation",
+	"department",
+	"company",
+	"reports_to",
+	"user_id",
+]
+
 
 @frappe.whitelist()
 def get_current_user_info() -> dict:
@@ -40,25 +51,15 @@ def get_current_user_info() -> dict:
 	return user
 
 
+def get_employee_info(employee: str) -> dict | None:
+	return frappe.db.get_value("Employee", employee, EMPLOYEE_SUMMARY_FIELDS, as_dict=True)
+
+
 @frappe.whitelist()
 def get_current_employee_info() -> dict:
 	current_user = frappe.session.user
-	employee = frappe.db.get_value(
-		"Employee",
-		{"user_id": current_user, "status": "Active"},
-		[
-			"name",
-			"first_name",
-			"employee_name",
-			"designation",
-			"department",
-			"company",
-			"reports_to",
-			"user_id",
-		],
-		as_dict=True,
-	)
-	return employee
+	employee = frappe.db.get_value("Employee", {"user_id": current_user, "status": "Active"}, "name")
+	return get_employee_info(employee) if employee else None
 
 
 @frappe.whitelist()
@@ -158,17 +159,38 @@ def are_push_notifications_enabled() -> bool:
 
 # Login / Dashboard summary
 @frappe.whitelist()
-def get_employee_login_summary(from_date: str | None = None, to_date: str | None = None) -> dict:
-	"""Attendance (incl. working hours) and leave snapshot for the logged-in employee.
+def get_employee_login_summary(
+	employee: str | None = None, from_date: str | None = None, to_date: str | None = None
+) -> dict:
+	"""Attendance (incl. working hours) and leave snapshot for an employee.
 
 	Meant to be called once by the client right after a session is established
 	via /api/method/login, so the client isn't hunting through Attendance,
 	Leave Application and Leave Allocation separately.
 
+	Defaults to the logged-in employee. HR/admin roles may pass `employee` to view
+	someone else's summary instead -- gated by the same read permission Desk itself
+	enforces on the Employee doctype, so a restricted HR User only reaches whoever
+	they could already open the Employee form for.
+
 	Both dates are optional and default to the current month to date. The dashboard
 	passes an explicit range when the user picks one.
 	"""
-	employee = get_current_employee()
+	if employee:
+		frappe.has_permission("Employee", "read", employee, throw=True)
+		employee_info = get_employee_info(employee)
+		if not employee_info:
+			frappe.throw(_("Employee not found"), frappe.DoesNotExistError)
+	else:
+		employee_info = get_current_employee_info()
+		if not employee_info:
+			# No Employee record linked to this session user -- an admin-only account
+			# rather than a genuine Employee login. Nothing to show yet; the client
+			# renders an empty state (with an employee picker, for elevated roles)
+			# instead of the PermissionError get_current_employee() would raise.
+			return frappe._dict(employee=None, attendance=[], leave_applications=[], leave_balance={})
+
+	employee = employee_info.name
 
 	to_date = getdate(to_date) if to_date else getdate()
 	from_date = getdate(from_date) if from_date else get_first_day(to_date)
@@ -185,12 +207,12 @@ def get_employee_login_summary(from_date: str | None = None, to_date: str | None
 		)
 
 	return frappe._dict(
-		employee=get_current_employee_info(),
+		employee=employee_info,
 		attendance=get_attendance_with_working_hours(employee, from_date, to_date),
 		leave_applications=get_leave_applications(
 			employee, limit=20, from_date=str(from_date), to_date=str(to_date)
 		),
-		leave_balance=get_leave_balance_map(),
+		leave_balance=get_leave_balance_map(employee),
 	)
 
 
@@ -477,17 +499,24 @@ def get_leave_applications(
 
 
 @frappe.whitelist()
-def get_leave_balance_map() -> dict[str, dict[str, float]]:
+def get_leave_balance_map(employee: str | None = None) -> dict[str, dict[str, float]]:
 	"""
 	Returns a map of leave type and balance details like:
 	{
 	        'Casual Leave': {'allocated_leaves': 10.0, 'balance_leaves': 5.0},
 	        'Earned Leave': {'allocated_leaves': 3.0, 'balance_leaves': 3.0},
 	}
+
+	Defaults to the logged-in employee; pass `employee` to look up someone else's
+	balance instead (permission-gated the same way as get_employee_login_summary,
+	since this is independently whitelisted and callable on its own).
 	"""
 	from hrms.hr.doctype.leave_application.leave_application import get_leave_details
 
-	employee = get_current_employee()
+	if employee:
+		frappe.has_permission("Employee", "read", employee, throw=True)
+	else:
+		employee = get_current_employee()
 
 	date = getdate()
 	leave_map = {}

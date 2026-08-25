@@ -7,7 +7,7 @@ app_license = "GNU General Public License (v3)"
 required_apps = ["frappe/erpnext"]
 source_link = "http://github.com/frappe/hrms"
 app_logo_url = "/assets/hrms/images/frappe-hr-logo.svg"
-app_home = "/desk/hr-setup"
+app_home = "/desk/hr-dashboard"
 
 add_to_apps_screen = [
 	{
@@ -34,7 +34,8 @@ app_include_css = "hrms.bundle.css"
 
 # include js, css files in header of web template
 # web_include_css = "/assets/hrms/css/hrms.css"
-# web_include_js = "/assets/hrms/js/hrms.js"
+# Drops Frappe's logout ?redirect-to= so login always uses home_page (hr-dashboard)
+web_include_js = ["/assets/hrms/js/login_home.js"]
 
 # include custom scss in every website theme (without file extension ".scss")
 # website_theme_scss = "hrms/public/scss/website"
@@ -72,9 +73,11 @@ doctype_js = {
 # 	"Role": "home_page"
 # }
 
-# plain employees land on the self-service dashboard instead of the full Desk;
-# HR/System Managers are excluded inside the function and keep the normal Desk
+# Desk login ignores get_website_user_home_page (that's website users only),
+# so also set home_page on session creation. Employees AND HR/admin land on
+# My Dashboard; Switch App is how they get into Frappe HR / ERPNext.
 get_website_user_home_page = "hrms.hr.utils.get_employee_home_page"
+on_session_creation = "hrms.hr.utils.redirect_to_hr_dashboard"
 
 # ...and a way back to it from anywhere in Desk, since nothing else routes there.
 # Declared as an Action rather than a Route because the settings dropdown spreads

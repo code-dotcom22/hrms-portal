@@ -1048,20 +1048,31 @@ def check_app_permission():
 	return False
 
 
-def get_employee_home_page(user: str) -> str | None:
-	"""Land plain employees on the self-service dashboard instead of the full Desk on login.
-
-	HR/admin roles are excluded so they still land on the regular Desk.
-	"""
+def should_open_hr_dashboard(user: str) -> bool:
+	"""True when this user should land on My Dashboard after login."""
+	if not user or user == "Guest":
+		return False
 	roles = set(frappe.get_roles(user))
-	elevated_roles = {"System Manager", "HR Manager", "HR User"}
-	if roles & elevated_roles:
-		return None
+	return bool(roles & {"Employee", "System Manager", "HR Manager", "HR User"})
 
-	if "Employee" in roles:
-		return "hr-dashboard"
 
+def get_employee_home_page(user: str) -> str | None:
+	"""Home page for website-user logins. Desk logins use redirect_to_hr_dashboard."""
+	if should_open_hr_dashboard(user):
+		return "/desk/hr-dashboard"
 	return None
+
+
+def redirect_to_hr_dashboard(login_manager=None):
+	"""Always send desk users to My Dashboard after login.
+
+	Frappe's login.js prefers ?redirect-to= (the page you logged out from) over
+	home_page. We still set home_page so that once redirect-to is stripped on
+	the login page, this is where the session lands.
+	"""
+	user = getattr(login_manager, "user", None) or frappe.session.user
+	if should_open_hr_dashboard(user):
+		frappe.local.response["home_page"] = "/desk/hr-dashboard"
 
 
 def get_exact_month_diff(string_ed_date: DateTimeLikeObject, string_st_date: DateTimeLikeObject) -> int:

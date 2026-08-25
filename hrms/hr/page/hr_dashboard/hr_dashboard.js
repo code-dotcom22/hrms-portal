@@ -3,11 +3,11 @@ frappe.pages["hr-dashboard"].on_page_load = function (wrapper) {
 		parent: wrapper,
 		title: __("My Dashboard"),
 		single_column: true,
-		// This is a landing hub, not a page "inside" Frappe HR -- the workspace nav
-		// would contradict the Switch App cards below. Same option frappe's own
-		// apps/desktop screen uses; it's re-evaluated on every page change, so the
-		// sidebar comes back as soon as you navigate into an app.
+		// Landing hub: hide both the body sidebar and the workspace dock, same as
+		// Frappe's own apps/desktop screen. Re-evaluated on every page change, so
+		// they come back as soon as you open Frappe HR.
 		hide_sidebar: true,
+		hide_workspace_dock: true,
 	});
 
 	// hide_sidebar takes the whole body sidebar with it, including the user menu that
@@ -72,12 +72,9 @@ hrms.HRDashboard = class HRDashboard {
 		// server falls back to the same window when the args are omitted.
 		[this.from_date, this.to_date] = this.get_preset_range("this_month");
 
-		this.wrapper.on("click", ".hr-app-card", (e) => {
-			e.preventDefault();
-			frappe.set_route($(e.currentTarget).attr("data-route"));
-		});
 		this.setup_layout();
 		this.setup_filters();
+		this.setup_frappe_hr_header_button();
 		this.setup_notification_bell();
 
 		// Namespaced and rebound so repeat visits to the page don't stack handlers.
@@ -220,7 +217,6 @@ hrms.HRDashboard = class HRDashboard {
 				this.get_leave_application_rows_html(leave_applications),
 				`<a class="hr-section-action" href="/desk/leave-application">${__("View All")}</a>`,
 			)}
-			${this.get_app_switcher_html()}
 		`);
 
 		// Charts need their containers present in the DOM before instantiation.
@@ -402,6 +398,24 @@ hrms.HRDashboard = class HRDashboard {
 
 		this.$filters.find(".hr-date-preset").removeClass("active");
 		if (match) this.$filters.find(`[data-preset="${match.key}"]`).addClass("active");
+	}
+
+	setup_frappe_hr_header_button() {
+		// Lives in the page header so Frappe HR is one click away without a
+		// Switch App section (and without exposing ERPNext on this landing page).
+		this.$hr_app_btn = $(`
+			<a class="hr-header-app-btn" href="/desk/hr-setup" title="${__("Frappe HR")}">
+				<span class="hr-app-card-badge" style="background: var(--blue-500, #0289f7)">HR</span>
+				<span class="hr-header-app-label">${__("Frappe HR")}</span>
+			</a>
+		`).prependTo(this.page.custom_actions);
+
+		this.page.custom_actions.removeClass("hide");
+
+		this.$hr_app_btn.on("click", (e) => {
+			e.preventDefault();
+			frappe.set_route("hr-setup");
+		});
 	}
 
 	setup_notification_bell() {
@@ -829,40 +843,4 @@ hrms.HRDashboard = class HRDashboard {
 		`;
 	}
 
-	get_app_switcher_html() {
-		const apps = [
-			{
-				title: __("Frappe HR"),
-				initials: "HR",
-				color: "var(--blue-500, #0289f7)",
-				route: "hr-setup",
-			},
-		];
-
-		if (frappe.boot.versions && frappe.boot.versions.erpnext) {
-			apps.push({
-				title: __("ERPNext"),
-				initials: "ERP",
-				color: "var(--green-500, #46b37e)",
-				route: "erpnext",
-			});
-		}
-
-		return `
-			<h5 class="hr-dashboard-section-title">${__("Switch App")}</h5>
-			<div class="hr-dashboard-apps">
-				${apps
-					.map(
-						(app) => `
-							<a class="hr-app-card" href="/app/${app.route}" data-route="${app.route}">
-								<div class="hr-app-card-badge" style="background: ${app.color}">${app.initials}</div>
-								<div class="hr-app-card-label">${app.title}</div>
-								<svg class="icon icon-sm hr-app-card-arrow"><use href="#icon-chevron-right"></use></svg>
-							</a>
-						`,
-					)
-					.join("")}
-			</div>
-		`;
-	}
 };

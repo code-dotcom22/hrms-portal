@@ -75,7 +75,7 @@ doctype_js = {
 
 # Desk login ignores get_website_user_home_page (that's website users only),
 # so also set home_page on session creation. Employees AND HR/admin land on
-# My Dashboard; Switch App is how they get into Frappe HR / ERPNext.
+# My Dashboard; the header Frappe HR chip is how they get into the HR workspace.
 get_website_user_home_page = "hrms.hr.utils.get_employee_home_page"
 on_session_creation = "hrms.hr.utils.redirect_to_hr_dashboard"
 

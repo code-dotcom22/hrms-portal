@@ -3,7 +3,7 @@ from frappe import _
 from frappe.model import get_permitted_fields
 from frappe.model.workflow import get_workflow_name
 from frappe.query_builder import Order
-from frappe.utils import add_days, date_diff, get_first_day, getdate, strip_html
+from frappe.utils import add_days, cint, date_diff, flt, get_first_day, getdate, strip_html
 
 from erpnext.setup.doctype.employee.employee import get_holiday_list_for_employee
 
@@ -27,6 +27,15 @@ SUPPORTED_FIELD_TYPES = [
 ]
 
 MAX_SUMMARY_RANGE_DAYS = 366
+
+# Roles allowed to look past their own record: browse another employee's dashboard,
+# and read the company-wide daily snapshot.
+ELEVATED_HR_ROLES = ("System Manager", "HR Manager", "HR User")
+
+ATTENDANCE_STATUSES = ("Present", "Absent", "On Leave", "Half Day", "Work From Home")
+
+# Half Day counts here too -- the person did turn up, just not for the full day.
+AT_WORK_STATUSES = ("Present", "Work From Home", "Half Day")
 
 EMPLOYEE_SUMMARY_FIELDS = [
 	"name",
@@ -236,6 +245,440 @@ def get_attendance_with_working_hours(employee: str, from_date, to_date) -> list
 			"shift",
 		],
 		order_by="attendance_date desc",
+	)
+# Daily snapshot (HR/admin landing view)
+@frappe.whitelist()
+def get_hr_daily_snapshot(date: str | None = None) -> dict:
+	"""Company-wide attendance picture for a single day.
+
+	Backs the at-a-glance section an HR/admin sees when they open the dashboard,
+	before (or instead of) drilling into one employee. Defaults to today; the
+	client passes an explicit date when the user steps back through the days.
+
+	Every query goes through `frappe.get_list`, so a restricted HR User only ever
+	counts the employees they could already see in a list view -- the role check
+	below just keeps the endpoint off the menu for regular employees, whose own
+	numbers already come from `get_employee_login_summary`.
+	"""
+	if not has_elevated_hr_role():
+		frappe.throw(_("Not permitted to view company-wide HR statistics"), frappe.PermissionError)
+
+	date = getdate(date) if date else getdate()
+	if date > getdate():
+		frappe.throw(_("Cannot show a snapshot for a future date"), frappe.ValidationError)
+
+	attendance_filters = {"attendance_date": date, "docstatus": 1}
+
+	status_counts = get_attendance_status_counts(attendance_filters)
+	totals = get_attendance_day_totals(attendance_filters)
+	marked = sum(status_counts.values())
+	headcount = get_headcount_on(date)
+
+	return frappe._dict(
+		date=str(date),
+		headcount=headcount,
+		marked=marked,
+		# A day can carry more Attendance records than there are employees still on
+		# the books, so this floors at zero rather than going negative and reading
+		# like a bug.
+		not_marked=max(headcount - marked, 0),
+		status_counts=status_counts,
+		checked_in=get_checked_in_count(date),
+		total_working_hours=flt(totals.total_working_hours, 2),
+		# Averaged over people who actually logged hours, matching the per-employee
+		# dashboard's "Avg Hours / Day".
+		avg_working_hours=flt(
+			flt(totals.total_working_hours) / totals.worked_count if totals.worked_count else 0, 2
+		),
+		late_entries=cint(totals.late_entries),
+		early_exits=cint(totals.early_exits),
+		pending_leave_approvals=get_pending_leave_approvals_count(),
+		department_breakdown=get_department_attendance_breakdown(attendance_filters),
+		out_today=get_employees_out_on(attendance_filters),
+		recent_checkins=get_recent_checkins(date),
+	)
+
+
+def has_elevated_hr_role(user: str | None = None) -> bool:
+	"""The same set the dashboard treats as "elevated" when deciding who may browse
+	other employees' data."""
+	return bool(set(frappe.get_roles(user or frappe.session.user)) & set(ELEVATED_HR_ROLES))
+
+
+def get_attendance_status_counts(attendance_filters: dict) -> dict[str, int]:
+	rows = frappe.get_list(
+		"Attendance",
+		filters=attendance_filters,
+		fields=["status", {"COUNT": "name", "as": "count"}],
+		group_by="status",
+		limit_page_length=0,
+	)
+
+	# Seeded with every standard status so the client renders a fixed set of tiles
+	# rather than a row whose shape changes from one day to the next.
+	counts = {status: 0 for status in ATTENDANCE_STATUSES}
+	for row in rows:
+		# A custom status added to the Select still gets counted rather than dropped.
+		counts[row.status] = counts.get(row.status, 0) + cint(row.count)
+
+	return counts
+
+
+def get_attendance_day_totals(attendance_filters: dict) -> dict:
+	# Grouped on the one date the filters already pin, so this is a single row --
+	# and, with a group_by present, get_list leaves off the default ordering that
+	# a server running ONLY_FULL_GROUP_BY would reject next to an aggregate.
+	rows = frappe.get_list(
+		"Attendance",
+		filters=attendance_filters,
+		fields=[
+			{"SUM": "working_hours", "as": "total_working_hours"},
+			{"SUM": "late_entry", "as": "late_entries"},
+			{"SUM": "early_exit", "as": "early_exits"},
+		],
+		group_by="attendance_date",
+	)
+	totals = frappe._dict(rows[0]) if rows else frappe._dict()
+
+	# Counted separately: a zero-hour day (leave, absent) shouldn't drag the average
+	# down, the same rule the per-employee dashboard applies.
+	worked = frappe.get_list(
+		"Attendance",
+		filters={**attendance_filters, "working_hours": [">", 0]},
+		fields=[{"COUNT": "name", "as": "worked_count"}],
+		group_by="attendance_date",
+	)
+	totals.worked_count = cint(worked[0].worked_count) if worked else 0
+
+	return totals
+
+
+def get_headcount_on(date) -> int:
+	"""Employees on the books on `date` -- joined by then and not yet relieved."""
+	# Grouped by status only to keep get_list from appending its default ordering
+	# next to the aggregate; the handful of rows are summed back together here.
+	rows = frappe.get_list(
+		"Employee",
+		filters=[["date_of_joining", "<=", date], ["status", "!=", "Inactive"]],
+		or_filters=[["relieving_date", "is", "not set"], ["relieving_date", ">=", date]],
+		fields=[{"COUNT": "name", "as": "count"}],
+		group_by="status",
+	)
+
+	return sum(cint(row.count) for row in rows)
+
+
+def get_checked_in_count(date) -> int:
+	"""Distinct employees with at least one check-in log on `date`.
+
+	Read separately from Attendance because the two move at different times:
+	check-ins land as they happen, while Attendance is only written once the day's
+	logs are processed -- so on the current day this is the figure that changes.
+	"""
+	# Grouped rather than counted DISTINCT: one row per employee, so the result is
+	# bounded by headcount even on a day with a lot of in/out punches.
+	rows = frappe.get_list(
+		"Employee Checkin",
+		filters=get_checkin_day_filters(date),
+		fields=["employee"],
+		group_by="employee",
+		limit_page_length=0,
+	)
+
+	return len(rows)
+
+
+def get_pending_leave_approvals_count() -> int:
+	"""Leave applications still awaiting a decision -- a backlog rather than a
+	figure for one day, so it deliberately ignores the selected date."""
+	rows = frappe.get_list(
+		"Leave Application",
+		filters={"status": "Open", "docstatus": ["<", 2]},
+		fields=[{"COUNT": "name", "as": "count"}],
+		# The filter already pins the status, so this stays a single row -- it's here
+		# to suppress the default ordering get_list would otherwise add.
+		group_by="status",
+	)
+
+	return cint(rows[0].count) if rows else 0
+
+
+def get_department_attendance_breakdown(attendance_filters: dict, limit: int = 8) -> list[dict]:
+	"""Marked attendance per department, busiest first."""
+	rows = frappe.get_list(
+		"Attendance",
+		filters=attendance_filters,
+		fields=["department", "status", {"COUNT": "name", "as": "count"}],
+		group_by="department, status",
+		limit_page_length=0,
+	)
+
+	departments = {}
+	for row in rows:
+		# Attendance with no department still counts towards the day, under a label
+		# rather than against an empty axis tick.
+		key = row.department or _("Unassigned")
+		entry = departments.setdefault(key, {"department": key, "total": 0, "at_work": 0, "away": 0})
+		count = cint(row.count)
+		entry["total"] += count
+		if row.status in AT_WORK_STATUSES:
+			entry["at_work"] += count
+		else:
+			entry["away"] += count
+
+	return sorted(departments.values(), key=lambda d: d["total"], reverse=True)[:limit]
+
+
+def get_employees_out_on(attendance_filters: dict, limit: int = 20) -> list[dict]:
+	"""Who isn't at work, from the attendance marked for the day."""
+	return frappe.get_list(
+		"Attendance",
+		filters={**attendance_filters, "status": ["in", ["On Leave", "Absent", "Half Day"]]},
+		fields=["employee", "employee_name", "department", "status", "leave_type"],
+		order_by="status asc, employee_name asc",
+		limit=limit,
+	)
+
+
+def get_recent_checkins(date, limit: int = 10) -> list[dict]:
+	return frappe.get_list(
+		"Employee Checkin",
+		filters=get_checkin_day_filters(date),
+		fields=["employee", "employee_name", "log_type", "time", "shift"],
+		order_by="time desc",
+		limit=limit,
+	)
+
+
+def get_checkin_day_filters(date) -> dict:
+	# `time` is a Datetime, so a plain equality on the date won't match; bound the day.
+	return {"time": ["between", [f"{date} 00:00:00", f"{date} 23:59:59.999999"]]}
+# Every tile on the snapshot stands for a set of people, so each one can be opened.
+# Keyed by the metric the client sends; the five attendance ones differ only by status.
+SNAPSHOT_STATUS_METRICS = {
+	"present": "Present",
+	"work_from_home": "Work From Home",
+	"on_leave": "On Leave",
+	"half_day": "Half Day",
+	"absent": "Absent",
+}
+
+# Rows shown in a drill-down before it stops being something you read at a glance.
+SNAPSHOT_BREAKDOWN_LIMIT = 100
+
+
+@frappe.whitelist()
+def get_hr_snapshot_breakdown(metric: str, date: str | None = None) -> dict:
+	"""The employees behind one number on the daily snapshot.
+
+	The client opens this when a tile is clicked. Rather than the caller knowing
+	what shape each metric returns, every branch answers with the same envelope --
+	`columns` describing what to render and `rows` carrying it -- so one renderer
+	handles all of them.
+	"""
+	if not has_elevated_hr_role():
+		frappe.throw(_("Not permitted to view company-wide HR statistics"), frappe.PermissionError)
+
+	date = getdate(date) if date else getdate()
+	if date > getdate():
+		frappe.throw(_("Cannot show a snapshot for a future date"), frappe.ValidationError)
+
+	if metric in SNAPSHOT_STATUS_METRICS:
+		result = get_attendance_breakdown(date, SNAPSHOT_STATUS_METRICS[metric])
+	elif metric == "checked_in":
+		result = get_checked_in_breakdown(date)
+	elif metric == "not_marked":
+		result = get_not_marked_breakdown(date)
+	elif metric in ("late_entries", "early_exits"):
+		result = get_exception_breakdown(date, metric)
+	elif metric == "avg_working_hours":
+		result = get_working_hours_breakdown(date)
+	elif metric == "pending_leave_approvals":
+		result = get_pending_leave_breakdown()
+	else:
+		frappe.throw(_("Unknown metric {0}").format(metric), frappe.ValidationError)
+
+	result.metric = metric
+	result.date = str(date)
+	# The client says so out loud rather than quietly showing a short list.
+	result.truncated = len(result.rows) >= SNAPSHOT_BREAKDOWN_LIMIT
+
+	return result
+
+
+def attendance_columns(*extra: dict) -> list[dict]:
+	return [
+		{"label": _("Employee"), "fieldname": "employee_name"},
+		{"label": _("Department"), "fieldname": "department", "format": "department"},
+		*extra,
+	]
+
+
+def get_attendance_breakdown(date, status: str) -> dict:
+	rows = frappe.get_list(
+		"Attendance",
+		filters={"attendance_date": date, "docstatus": 1, "status": status},
+		fields=[
+			"employee",
+			"employee_name",
+			"department",
+			"leave_type",
+			"working_hours",
+			"in_time",
+			"out_time",
+		],
+		order_by="employee_name asc",
+		limit=SNAPSHOT_BREAKDOWN_LIMIT,
+	)
+
+	# On Leave has no hours worth a column, but it does have a reason.
+	if status == "On Leave":
+		extra = [{"label": _("Leave Type"), "fieldname": "leave_type"}]
+	else:
+		extra = [
+			{"label": _("In"), "fieldname": "in_time", "format": "time"},
+			{"label": _("Out"), "fieldname": "out_time", "format": "time"},
+			{"label": _("Hours"), "fieldname": "working_hours", "format": "hours"},
+		]
+
+	return frappe._dict(columns=attendance_columns(*extra), rows=rows)
+
+
+def get_checked_in_breakdown(date) -> dict:
+	"""One row per employee, from their check-in logs for the day.
+
+	Grouped on employee (and the name that comes with it, so ordering by it stays
+	valid under ONLY_FULL_GROUP_BY) -- the first and last punch bracket their day.
+	"""
+	rows = frappe.get_list(
+		"Employee Checkin",
+		filters=get_checkin_day_filters(date),
+		fields=[
+			"employee",
+			"employee_name",
+			{"MIN": "time", "as": "first_time"},
+			{"MAX": "time", "as": "last_time"},
+			{"COUNT": "name", "as": "logs"},
+		],
+		group_by="employee, employee_name",
+		order_by="employee_name asc",
+		limit=SNAPSHOT_BREAKDOWN_LIMIT,
+	)
+
+	return frappe._dict(
+		columns=[
+			{"label": _("Employee"), "fieldname": "employee_name"},
+			{"label": _("First In"), "fieldname": "first_time", "format": "time"},
+			{"label": _("Last Log"), "fieldname": "last_time", "format": "time"},
+			{"label": _("Logs"), "fieldname": "logs"},
+		],
+		rows=rows,
+	)
+
+
+def get_not_marked_breakdown(date) -> dict:
+	"""Employees on the books with no attendance recorded for the day."""
+	marked = frappe.get_list(
+		"Attendance",
+		filters={"attendance_date": date, "docstatus": 1},
+		pluck="employee",
+		limit_page_length=0,
+	)
+
+	filters = [["date_of_joining", "<=", date], ["status", "!=", "Inactive"]]
+	if marked:
+		filters.append(["name", "not in", marked])
+
+	rows = frappe.get_list(
+		"Employee",
+		filters=filters,
+		or_filters=[["relieving_date", "is", "not set"], ["relieving_date", ">=", date]],
+		fields=["name as employee", "employee_name", "department", "designation"],
+		order_by="employee_name asc",
+		limit=SNAPSHOT_BREAKDOWN_LIMIT,
+	)
+
+	return frappe._dict(
+		columns=attendance_columns({"label": _("Designation"), "fieldname": "designation"}),
+		rows=rows,
+	)
+
+
+def get_exception_breakdown(date, metric: str) -> dict:
+	"""Late arrivals or early departures, as flagged on the day's attendance."""
+	fieldname = "late_entry" if metric == "late_entries" else "early_exit"
+
+	rows = frappe.get_list(
+		"Attendance",
+		filters={"attendance_date": date, "docstatus": 1, fieldname: 1},
+		fields=[
+			"employee",
+			"employee_name",
+			"department",
+			"status",
+			"in_time",
+			"out_time",
+			"working_hours",
+		],
+		order_by="employee_name asc",
+		limit=SNAPSHOT_BREAKDOWN_LIMIT,
+	)
+
+	return frappe._dict(
+		columns=attendance_columns(
+			{"label": _("In"), "fieldname": "in_time", "format": "time"},
+			{"label": _("Out"), "fieldname": "out_time", "format": "time"},
+			{"label": _("Hours"), "fieldname": "working_hours", "format": "hours"},
+		),
+		rows=rows,
+	)
+
+
+def get_working_hours_breakdown(date) -> dict:
+	"""Everyone who logged time, longest day first -- the figures behind the average."""
+	rows = frappe.get_list(
+		"Attendance",
+		filters={"attendance_date": date, "docstatus": 1, "working_hours": [">", 0]},
+		fields=["employee", "employee_name", "department", "status", "working_hours"],
+		order_by="working_hours desc",
+		limit=SNAPSHOT_BREAKDOWN_LIMIT,
+	)
+
+	return frappe._dict(
+		columns=attendance_columns(
+			{"label": _("Status"), "fieldname": "status", "format": "status"},
+			{"label": _("Hours"), "fieldname": "working_hours", "format": "hours"},
+		),
+		rows=rows,
+	)
+
+
+def get_pending_leave_breakdown() -> dict:
+	"""Deliberately not scoped to the selected day -- this tile is a backlog."""
+	rows = frappe.get_list(
+		"Leave Application",
+		filters={"status": "Open", "docstatus": ["<", 2]},
+		fields=[
+			"employee",
+			"employee_name",
+			"department",
+			"leave_type",
+			"from_date",
+			"to_date",
+			"total_leave_days",
+		],
+		order_by="from_date asc",
+		limit=SNAPSHOT_BREAKDOWN_LIMIT,
+	)
+
+	return frappe._dict(
+		columns=attendance_columns(
+			{"label": _("Leave Type"), "fieldname": "leave_type"},
+			{"label": _("From"), "fieldname": "from_date", "format": "date"},
+			{"label": _("To"), "fieldname": "to_date", "format": "date"},
+			{"label": _("Days"), "fieldname": "total_leave_days"},
+		),
+		rows=rows,
 	)
 
 

@@ -129,12 +129,6 @@
 	margin-bottom: 2px;
 }
 
-.hr-employee-picker-hint {
-	font-size: 11px;
-	margin-top: 4px;
-	max-width: 320px;
-}
-
 /* Draws the eye up to the field for a couple of beats when the page has
    nothing else to show yet, then settles into a steady highlighted border. */
 .hr-employee-picker-attention .form-control {
@@ -166,6 +160,13 @@
 	height: 40px;
 	stroke: var(--text-muted);
 	margin-bottom: 12px;
+}
+
+/* Under a daily snapshot the empty state is one section among several, not the
+   whole page, so it drops the splash-sized top margin. */
+.hr-dashboard-empty-state-compact {
+	margin-top: 24px;
+	margin-bottom: 8px;
 }
 
 .hr-dashboard-empty-state h5 {
@@ -528,6 +529,286 @@
 	font-size: 13px;
 }
 
+/* Daily snapshot (HR/admin) */
+
+/* Empty for everyone without an elevated role, and an empty block shouldn't
+   push the employee sections down the page. */
+.hr-dashboard-snapshot:not(:empty) {
+	margin-bottom: 36px;
+}
+
+.hr-snapshot-header {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: flex-end;
+	justify-content: space-between;
+	gap: 12px;
+	margin-bottom: 18px;
+}
+
+.hr-snapshot-title {
+	margin: 0 0 3px;
+	font-size: 17px;
+	font-weight: 600;
+	letter-spacing: -0.01em;
+}
+
+.hr-snapshot-subtitle {
+	font-size: 12.5px;
+}
+
+.hr-snapshot-date-controls {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 8px;
+}
+
+/* ‹ date › as one joined control rather than three loose boxes. */
+.hr-snapshot-stepper {
+	display: inline-flex;
+	align-items: stretch;
+	height: 32px;
+	border: 1px solid var(--border-color);
+	border-radius: 8px;
+	overflow: hidden;
+	background: var(--card-bg, var(--fg-color));
+}
+
+.hr-snapshot-day-nav {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 30px;
+	padding: 0;
+	border: none;
+	background: transparent;
+	color: var(--text-muted);
+	cursor: pointer;
+	transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.hr-snapshot-day-nav:hover:not(:disabled) {
+	background: var(--fg-color, #f4f5f6);
+	color: var(--text-color);
+}
+
+.hr-snapshot-day-nav:disabled {
+	opacity: 0.35;
+	cursor: not-allowed;
+}
+
+.hr-snapshot-day-nav .icon {
+	stroke: currentColor;
+}
+
+/* Keeps the browser's own calendar popup and its icon in the page's theme. */
+.hr-snapshot-date {
+	width: 128px;
+	border: none;
+	border-left: 1px solid var(--border-color);
+	border-right: 1px solid var(--border-color);
+	background: transparent;
+	color: inherit;
+	padding: 0 8px;
+	font-size: 12.5px;
+	font-weight: 500;
+	color-scheme: light;
+}
+
+.hr-snapshot-date:focus {
+	outline: none;
+}
+
+:root[data-theme="dark"] .hr-snapshot-date,
+.dark .hr-snapshot-date {
+	color-scheme: dark;
+}
+
+/* Segmented control: the selected day reads as the raised one. */
+.hr-snapshot-segment {
+	display: inline-flex;
+	gap: 2px;
+	height: 32px;
+	padding: 3px;
+	border: 1px solid var(--border-color);
+	border-radius: 8px;
+	background: var(--fg-color, #f4f5f6);
+}
+
+.hr-snapshot-preset {
+	border: none;
+	border-radius: 6px;
+	background: transparent;
+	padding: 0 12px;
+	font-size: 12.5px;
+	font-weight: 500;
+	color: var(--text-muted);
+	white-space: nowrap;
+	cursor: pointer;
+	transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.hr-snapshot-preset:hover {
+	color: var(--text-color);
+}
+
+.hr-snapshot-preset.active {
+	background: var(--card-bg, #fff);
+	color: var(--text-color);
+	box-shadow: var(--shadow-sm);
+}
+
+:root[data-theme="dark"] .hr-snapshot-preset.active,
+.dark .hr-snapshot-preset.active {
+	background: rgba(255, 255, 255, 0.1);
+}
+
+/* KPI tiles */
+
+.hr-snapshot-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+	gap: 10px;
+}
+
+.hr-snapshot-tile {
+	position: relative;
+	display: flex;
+	flex-direction: column;
+	width: 100%;
+	padding: 13px 15px;
+	border: 1px solid var(--border-color);
+	border-radius: 12px;
+	background: var(--card-bg, var(--fg-color));
+	text-align: left;
+	cursor: pointer;
+	transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+.hr-snapshot-tile:hover {
+	border-color: var(--gray-400);
+	box-shadow: var(--shadow-md);
+	transform: translateY(-2px);
+}
+
+.hr-snapshot-tile:focus-visible {
+	outline: 2px solid var(--blue-500, #0289f7);
+	outline-offset: 2px;
+}
+
+.hr-snapshot-tile-label {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	/* Two lines' worth, reserved. A label that wraps ("Work From Home") would
+	   otherwise push its value down and break the line the numbers read along. */
+	min-height: 32px;
+	color: var(--text-muted);
+	font-size: 12px;
+	font-weight: 500;
+	line-height: 1.35;
+}
+
+.hr-snapshot-dot {
+	flex-shrink: 0;
+	width: 7px;
+	height: 7px;
+	border-radius: 50%;
+	background: var(--gray-400, #999);
+}
+
+.hr-snapshot-tile-value {
+	font-size: 27px;
+	font-weight: 600;
+	line-height: 1.15;
+	letter-spacing: -0.02em;
+	/* Digits keep their column as the numbers change from day to day. */
+	font-variant-numeric: tabular-nums;
+}
+
+.hr-snapshot-tile-note {
+	/* Pinned to the bottom so notes line up whether or not a tile has one. */
+	margin-top: auto;
+	padding-top: 3px;
+	min-height: 16px;
+	color: var(--text-muted);
+	font-size: 11px;
+	line-height: 1.4;
+}
+
+/* Stays out of the way until the tile is hovered, then says "there's more here". */
+.hr-snapshot-tile-arrow {
+	position: absolute;
+	top: 12px;
+	right: 11px;
+	stroke: var(--text-muted);
+	opacity: 0;
+	transform: translateX(-3px);
+	transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.hr-snapshot-tile:hover .hr-snapshot-tile-arrow {
+	opacity: 1;
+	transform: translateX(0);
+}
+
+.hr-snapshot-tile.blue .hr-snapshot-dot {
+	background: var(--blue-500, #0289f7);
+}
+.hr-snapshot-tile.green .hr-snapshot-dot {
+	background: var(--green-500, #46b37e);
+}
+.hr-snapshot-tile.cyan .hr-snapshot-dot {
+	background: var(--cyan-500, #3bbde5);
+}
+.hr-snapshot-tile.purple .hr-snapshot-dot {
+	background: var(--purple-500, #9c45e3);
+}
+.hr-snapshot-tile.orange .hr-snapshot-dot {
+	background: var(--orange-500, #e86c13);
+}
+.hr-snapshot-tile.red .hr-snapshot-dot {
+	background: var(--red-500, #e03636);
+}
+
+/* Two tables side by side while there's room; the shared table styles handle the
+   rest. */
+.hr-snapshot-tables {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+	gap: 0 20px;
+}
+
+/* Tile drill-down */
+
+.hr-breakdown-scope {
+	font-size: 12px;
+	margin-bottom: 10px;
+}
+
+.hr-breakdown-note {
+	font-size: 11.5px;
+	margin-top: 8px;
+}
+
+.hr-breakdown-row {
+	cursor: pointer;
+}
+
+/* Divider between the company-wide block and the single-employee one */
+
+.hr-employee-section-header {
+	padding-top: 20px;
+	border-top: 1px solid var(--border-color);
+	margin-bottom: 16px;
+}
+
+.hr-employee-section-header .hr-dashboard-section-title {
+	margin-top: 0;
+	margin-bottom: 0;
+}
+
 /* Charts */
 
 .hr-dashboard-charts {
@@ -545,9 +826,8 @@
 
 .hr-chart-card {
 	border: 1px solid var(--border-color);
-	border-radius: var(--border-radius-md);
+	border-radius: 12px;
 	padding: 16px;
-	box-shadow: var(--shadow-sm);
 	min-width: 0;
 }
 
@@ -582,8 +862,7 @@
 .hr-dashboard-table-wrapper {
 	overflow-x: auto;
 	border: 1px solid var(--border-color);
-	border-radius: var(--border-radius-md);
-	box-shadow: var(--shadow-sm);
+	border-radius: 12px;
 }
 
 .hr-dashboard-table-wrapper table {
@@ -605,12 +884,14 @@
 }
 
 .hr-dashboard-table-wrapper thead th {
-	background: var(--fg-color, #f9fafb);
+	background: transparent;
 	color: var(--text-muted);
-	font-size: 12px;
+	font-size: 11px;
 	font-weight: 600;
 	text-transform: uppercase;
-	letter-spacing: 0.02em;
+	letter-spacing: 0.04em;
+	padding-top: 10px;
+	padding-bottom: 10px;
 }
 
 .hr-dashboard-table-wrapper tbody tr {

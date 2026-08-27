@@ -239,39 +239,39 @@ hrms.HRDashboard = class HRDashboard {
 		this.$snapshot.html(`
 			<div class="hr-snapshot-header">
 				<div>
-					<h5 class="hr-dashboard-section-title hr-snapshot-title">${__("Today at a glance")}</h5>
+					<h5 class="hr-snapshot-title">${__("Today at a glance")}</h5>
 					<div class="hr-snapshot-subtitle text-muted"></div>
 				</div>
 				<div class="hr-snapshot-date-controls">
-					<button
-						type="button"
-						class="hr-snapshot-day-nav"
-						data-step="-1"
-						title="${__("Previous day")}"
-						aria-label="${__("Previous day")}"
-					>
-						<svg class="icon icon-sm"><use href="#icon-chevron-left"></use></svg>
-					</button>
-					<input
-						type="date"
-						class="form-control input-with-feedback hr-snapshot-date"
-						aria-label="${__("Snapshot date")}"
-					>
-					<button
-						type="button"
-						class="hr-snapshot-day-nav"
-						data-step="1"
-						title="${__("Next day")}"
-						aria-label="${__("Next day")}"
-					>
-						<svg class="icon icon-sm"><use href="#icon-chevron-right"></use></svg>
-					</button>
-					<button type="button" class="hr-date-preset" data-snapshot-preset="today">
-						${__("Today")}
-					</button>
-					<button type="button" class="hr-date-preset" data-snapshot-preset="yesterday">
-						${__("Yesterday")}
-					</button>
+					<div class="hr-snapshot-stepper">
+						<button
+							type="button"
+							class="hr-snapshot-day-nav"
+							data-step="-1"
+							title="${__("Previous day")}"
+							aria-label="${__("Previous day")}"
+						>
+							<svg class="icon icon-sm"><use href="#icon-chevron-left"></use></svg>
+						</button>
+						<input type="date" class="hr-snapshot-date" aria-label="${__("Snapshot date")}">
+						<button
+							type="button"
+							class="hr-snapshot-day-nav"
+							data-step="1"
+							title="${__("Next day")}"
+							aria-label="${__("Next day")}"
+						>
+							<svg class="icon icon-sm"><use href="#icon-chevron-right"></use></svg>
+						</button>
+					</div>
+					<div class="hr-snapshot-segment">
+						<button type="button" class="hr-snapshot-preset" data-snapshot-preset="today">
+							${__("Today")}
+						</button>
+						<button type="button" class="hr-snapshot-preset" data-snapshot-preset="yesterday">
+							${__("Yesterday")}
+						</button>
+					</div>
 				</div>
 			</div>
 			<div class="hr-snapshot-body"></div>
@@ -303,6 +303,12 @@ hrms.HRDashboard = class HRDashboard {
 		});
 		this.$snapshot.on("change", ".hr-snapshot-date", () => {
 			this.set_snapshot_date(this.$snapshot_date.val());
+		});
+
+		// Every tile stands for a set of people, so every tile opens that set.
+		this.$snapshot.on("click", ".hr-snapshot-tile", (e) => {
+			const $tile = $(e.currentTarget);
+			this.show_metric_breakdown($tile.attr("data-metric"), $tile.attr("data-label"));
 		});
 
 		this.sync_snapshot_controls();
@@ -436,8 +442,11 @@ hrms.HRDashboard = class HRDashboard {
 				? __("{0}% of headcount", [Math.round((value / data.headcount) * 100)])
 				: "";
 
+		// `metric` is what the drill-down asks the server for, so it has to match the
+		// keys get_hr_snapshot_breakdown branches on.
 		const tiles = [
 			{
+				metric: "checked_in",
 				label: __("Checked In"),
 				value: data.checked_in,
 				// Check-in logs land as they happen, well before attendance is processed,
@@ -445,26 +454,39 @@ hrms.HRDashboard = class HRDashboard {
 				note: share(data.checked_in),
 				color: "green",
 			},
-			{ label: __("Present"), value: counts["Present"] || 0, color: "blue" },
-			{ label: __("Work From Home"), value: counts["Work From Home"] || 0, color: "cyan" },
-			{ label: __("On Leave"), value: counts["On Leave"] || 0, color: "purple" },
-			{ label: __("Half Day"), value: counts["Half Day"] || 0, color: "orange" },
-			{ label: __("Absent"), value: counts["Absent"] || 0, color: "red" },
+			{ metric: "present", label: __("Present"), value: counts["Present"] || 0, color: "blue" },
 			{
+				metric: "work_from_home",
+				label: __("Work From Home"),
+				value: counts["Work From Home"] || 0,
+				color: "cyan",
+			},
+			{ metric: "on_leave", label: __("On Leave"), value: counts["On Leave"] || 0, color: "purple" },
+			{ metric: "half_day", label: __("Half Day"), value: counts["Half Day"] || 0, color: "orange" },
+			{ metric: "absent", label: __("Absent"), value: counts["Absent"] || 0, color: "red" },
+			{
+				metric: "not_marked",
 				label: __("Not Marked"),
 				value: data.not_marked,
 				note: __("No attendance yet"),
 				color: "gray",
 			},
 			{
+				metric: "avg_working_hours",
 				label: __("Avg Hours"),
 				value: data.avg_working_hours,
 				note: __("{0} hrs logged", [data.total_working_hours]),
 				color: "green",
 			},
-			{ label: __("Late Entries"), value: data.late_entries, color: "orange" },
 			{
-				label: __("Pending Leave Approvals"),
+				metric: "late_entries",
+				label: __("Late Entries"),
+				value: data.late_entries,
+				color: "orange",
+			},
+			{
+				metric: "pending_leave_approvals",
+				label: __("Pending Approvals"),
 				value: data.pending_leave_approvals,
 				// A backlog rather than a figure for the selected day, so it's labelled
 				// as such instead of looking like it failed to follow the date.
@@ -478,11 +500,21 @@ hrms.HRDashboard = class HRDashboard {
 				${tiles
 					.map(
 						(t) => `
-							<div class="hr-snapshot-tile ${t.color}">
-								<div class="hr-snapshot-tile-label">${t.label}</div>
-								<div class="hr-snapshot-tile-value">${t.value}</div>
-								<div class="hr-snapshot-tile-note">${t.note || "&nbsp;"}</div>
-							</div>
+							<button
+								type="button"
+								class="hr-snapshot-tile ${t.color}"
+								data-metric="${t.metric}"
+								data-label="${frappe.utils.escape_html(t.label)}"
+							>
+								<span class="hr-snapshot-tile-label">
+									<span class="hr-snapshot-dot"></span>${t.label}
+								</span>
+								<span class="hr-snapshot-tile-value">${t.value}</span>
+								<span class="hr-snapshot-tile-note">${t.note || ""}</span>
+								<svg class="icon icon-sm hr-snapshot-tile-arrow">
+									<use href="#icon-chevron-right"></use>
+								</svg>
+							</button>
 						`,
 					)
 					.join("")}
@@ -622,6 +654,138 @@ hrms.HRDashboard = class HRDashboard {
 				`;
 			})
 			.join("");
+	}
+
+	// Tile drill-down
+
+	show_metric_breakdown(metric, label) {
+		if (!metric) return;
+
+		const dialog = new frappe.ui.Dialog({
+			title: label,
+			size: "large",
+			fields: [{ fieldtype: "HTML", fieldname: "breakdown" }],
+		});
+		const $body = dialog.fields_dict.breakdown.$wrapper;
+
+		$body.html(`<div class="hr-dashboard-message text-muted">${__("Loading...")}</div>`);
+		dialog.show();
+
+		// Picking someone out of the list is the point of opening it: the dialog closes
+		// and the employee section below loads them, rather than dead-ending on a name.
+		$body.on("click", ".hr-breakdown-row", (e) => {
+			const employee = $(e.currentTarget).attr("data-employee");
+			if (!employee) return;
+			dialog.hide();
+			this.select_employee(employee);
+		});
+
+		frappe.call({
+			method: "hrms.api.get_hr_snapshot_breakdown",
+			args: { metric: metric, date: this.snapshot_date },
+			freeze: false,
+			callback: (r) => {
+				// No "is the dialog still open?" guard here on purpose: frappe.get_modal
+				// builds the modal detached from the document, so any visibility test on
+				// it can read false and strand the dialog on "Loading...". Rendering into
+				// a dialog the user already closed costs nothing -- it's thrown away.
+				$body.html(this.get_breakdown_html(r.message));
+			},
+			error: () => {
+				$body.html(
+					`<div class="hr-dashboard-message text-muted">${__(
+						"Could not load these employees.",
+					)}</div>`,
+				);
+			},
+		});
+	}
+
+	get_breakdown_html(data) {
+		if (!data || !(data.rows || []).length) {
+			return `<div class="hr-dashboard-message text-muted">${__("Nobody to show here")}</div>`;
+		}
+
+		const columns = data.columns || [];
+		const headers = columns.map((c) => `<th>${c.label}</th>`).join("");
+		const rows = data.rows
+			.map(
+				(row) => `
+					<tr class="hr-breakdown-row" data-employee="${frappe.utils.escape_html(row.employee || "")}">
+						${columns.map((c) => `<td>${this.get_breakdown_cell_html(row, c)}</td>`).join("")}
+					</tr>
+				`,
+			)
+			.join("");
+
+		// The date the numbers came from, restated -- the dialog title carries the
+		// metric but not which day is on screen behind it.
+		const scope =
+			data.metric === "pending_leave_approvals"
+				? __("Across all dates")
+				: moment(data.date).format("dddd, D MMMM YYYY");
+
+		const truncated = data.truncated
+			? `<div class="hr-breakdown-note text-muted">${__(
+					"Showing the first {0} only.",
+					[data.rows.length],
+				)}</div>`
+			: "";
+
+		return `
+			<div class="hr-breakdown">
+				<div class="hr-breakdown-scope text-muted">${scope}</div>
+				<div class="hr-dashboard-table-wrapper">
+					<table class="table table-bordered">
+						<thead><tr>${headers}</tr></thead>
+						<tbody>${rows}</tbody>
+					</table>
+				</div>
+				${truncated}
+				<div class="hr-breakdown-note text-muted">
+					${__("Select someone to open their dashboard below.")}
+				</div>
+			</div>
+		`;
+	}
+
+	get_breakdown_cell_html(row, column) {
+		const value = row[column.fieldname];
+		if (value === null || value === undefined || value === "") {
+			return `<span class="text-muted">-</span>`;
+		}
+
+		switch (column.format) {
+			case "time":
+				// The day is already fixed by the snapshot's own filter, so the clock
+				// time alone is all a cell needs to carry.
+				return frappe.datetime.str_to_user(value, true);
+			case "date":
+				return frappe.datetime.str_to_user(value);
+			case "department":
+				return frappe.utils.escape_html(this.strip_abbr(value));
+			case "hours":
+				return `${value}`;
+			case "status": {
+				const color = this.attendance_status_colors[value] || "gray";
+				return `<span class="indicator-pill no-indicator-dot ${color}">${frappe.utils.escape_html(
+					value,
+				)}</span>`;
+			}
+			default:
+				return frappe.utils.escape_html(String(value));
+		}
+	}
+
+	select_employee(employee) {
+		if (!this.employee_control) return;
+
+		// set_value fires the control's own onchange, which is what refetches the
+		// employee sections -- no need to call fetch() again here.
+		this.employee_control.set_value(employee);
+
+		const heading = this.$employee_heading.get(0);
+		if (heading) heading.scrollIntoView({ behavior: "smooth", block: "start" });
 	}
 
 	// Date range

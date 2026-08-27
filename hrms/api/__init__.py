@@ -453,6 +453,233 @@ def get_recent_checkins(date, limit: int = 10) -> list[dict]:
 def get_checkin_day_filters(date) -> dict:
 	# `time` is a Datetime, so a plain equality on the date won't match; bound the day.
 	return {"time": ["between", [f"{date} 00:00:00", f"{date} 23:59:59.999999"]]}
+# Every tile on the snapshot stands for a set of people, so each one can be opened.
+# Keyed by the metric the client sends; the five attendance ones differ only by status.
+SNAPSHOT_STATUS_METRICS = {
+	"present": "Present",
+	"work_from_home": "Work From Home",
+	"on_leave": "On Leave",
+	"half_day": "Half Day",
+	"absent": "Absent",
+}
+
+# Rows shown in a drill-down before it stops being something you read at a glance.
+SNAPSHOT_BREAKDOWN_LIMIT = 100
+
+
+@frappe.whitelist()
+def get_hr_snapshot_breakdown(metric: str, date: str | None = None) -> dict:
+	"""The employees behind one number on the daily snapshot.
+
+	The client opens this when a tile is clicked. Rather than the caller knowing
+	what shape each metric returns, every branch answers with the same envelope --
+	`columns` describing what to render and `rows` carrying it -- so one renderer
+	handles all of them.
+	"""
+	if not has_elevated_hr_role():
+		frappe.throw(_("Not permitted to view company-wide HR statistics"), frappe.PermissionError)
+
+	date = getdate(date) if date else getdate()
+	if date > getdate():
+		frappe.throw(_("Cannot show a snapshot for a future date"), frappe.ValidationError)
+
+	if metric in SNAPSHOT_STATUS_METRICS:
+		result = get_attendance_breakdown(date, SNAPSHOT_STATUS_METRICS[metric])
+	elif metric == "checked_in":
+		result = get_checked_in_breakdown(date)
+	elif metric == "not_marked":
+		result = get_not_marked_breakdown(date)
+	elif metric in ("late_entries", "early_exits"):
+		result = get_exception_breakdown(date, metric)
+	elif metric == "avg_working_hours":
+		result = get_working_hours_breakdown(date)
+	elif metric == "pending_leave_approvals":
+		result = get_pending_leave_breakdown()
+	else:
+		frappe.throw(_("Unknown metric {0}").format(metric), frappe.ValidationError)
+
+	result.metric = metric
+	result.date = str(date)
+	# The client says so out loud rather than quietly showing a short list.
+	result.truncated = len(result.rows) >= SNAPSHOT_BREAKDOWN_LIMIT
+
+	return result
+
+
+def attendance_columns(*extra: dict) -> list[dict]:
+	return [
+		{"label": _("Employee"), "fieldname": "employee_name"},
+		{"label": _("Department"), "fieldname": "department", "format": "department"},
+		*extra,
+	]
+
+
+def get_attendance_breakdown(date, status: str) -> dict:
+	rows = frappe.get_list(
+		"Attendance",
+		filters={"attendance_date": date, "docstatus": 1, "status": status},
+		fields=[
+			"employee",
+			"employee_name",
+			"department",
+			"leave_type",
+			"working_hours",
+			"in_time",
+			"out_time",
+		],
+		order_by="employee_name asc",
+		limit=SNAPSHOT_BREAKDOWN_LIMIT,
+	)
+
+	# On Leave has no hours worth a column, but it does have a reason.
+	if status == "On Leave":
+		extra = [{"label": _("Leave Type"), "fieldname": "leave_type"}]
+	else:
+		extra = [
+			{"label": _("In"), "fieldname": "in_time", "format": "time"},
+			{"label": _("Out"), "fieldname": "out_time", "format": "time"},
+			{"label": _("Hours"), "fieldname": "working_hours", "format": "hours"},
+		]
+
+	return frappe._dict(columns=attendance_columns(*extra), rows=rows)
+
+
+def get_checked_in_breakdown(date) -> dict:
+	"""One row per employee, from their check-in logs for the day.
+
+	Grouped on employee (and the name that comes with it, so ordering by it stays
+	valid under ONLY_FULL_GROUP_BY) -- the first and last punch bracket their day.
+	"""
+	rows = frappe.get_list(
+		"Employee Checkin",
+		filters=get_checkin_day_filters(date),
+		fields=[
+			"employee",
+			"employee_name",
+			{"MIN": "time", "as": "first_time"},
+			{"MAX": "time", "as": "last_time"},
+			{"COUNT": "name", "as": "logs"},
+		],
+		group_by="employee, employee_name",
+		order_by="employee_name asc",
+		limit=SNAPSHOT_BREAKDOWN_LIMIT,
+	)
+
+	return frappe._dict(
+		columns=[
+			{"label": _("Employee"), "fieldname": "employee_name"},
+			{"label": _("First In"), "fieldname": "first_time", "format": "time"},
+			{"label": _("Last Log"), "fieldname": "last_time", "format": "time"},
+			{"label": _("Logs"), "fieldname": "logs"},
+		],
+		rows=rows,
+	)
+
+
+def get_not_marked_breakdown(date) -> dict:
+	"""Employees on the books with no attendance recorded for the day."""
+	marked = frappe.get_list(
+		"Attendance",
+		filters={"attendance_date": date, "docstatus": 1},
+		pluck="employee",
+		limit_page_length=0,
+	)
+
+	filters = [["date_of_joining", "<=", date], ["status", "!=", "Inactive"]]
+	if marked:
+		filters.append(["name", "not in", marked])
+
+	rows = frappe.get_list(
+		"Employee",
+		filters=filters,
+		or_filters=[["relieving_date", "is", "not set"], ["relieving_date", ">=", date]],
+		fields=["name as employee", "employee_name", "department", "designation"],
+		order_by="employee_name asc",
+		limit=SNAPSHOT_BREAKDOWN_LIMIT,
+	)
+
+	return frappe._dict(
+		columns=attendance_columns({"label": _("Designation"), "fieldname": "designation"}),
+		rows=rows,
+	)
+
+
+def get_exception_breakdown(date, metric: str) -> dict:
+	"""Late arrivals or early departures, as flagged on the day's attendance."""
+	fieldname = "late_entry" if metric == "late_entries" else "early_exit"
+
+	rows = frappe.get_list(
+		"Attendance",
+		filters={"attendance_date": date, "docstatus": 1, fieldname: 1},
+		fields=[
+			"employee",
+			"employee_name",
+			"department",
+			"status",
+			"in_time",
+			"out_time",
+			"working_hours",
+		],
+		order_by="employee_name asc",
+		limit=SNAPSHOT_BREAKDOWN_LIMIT,
+	)
+
+	return frappe._dict(
+		columns=attendance_columns(
+			{"label": _("In"), "fieldname": "in_time", "format": "time"},
+			{"label": _("Out"), "fieldname": "out_time", "format": "time"},
+			{"label": _("Hours"), "fieldname": "working_hours", "format": "hours"},
+		),
+		rows=rows,
+	)
+
+
+def get_working_hours_breakdown(date) -> dict:
+	"""Everyone who logged time, longest day first -- the figures behind the average."""
+	rows = frappe.get_list(
+		"Attendance",
+		filters={"attendance_date": date, "docstatus": 1, "working_hours": [">", 0]},
+		fields=["employee", "employee_name", "department", "status", "working_hours"],
+		order_by="working_hours desc",
+		limit=SNAPSHOT_BREAKDOWN_LIMIT,
+	)
+
+	return frappe._dict(
+		columns=attendance_columns(
+			{"label": _("Status"), "fieldname": "status", "format": "status"},
+			{"label": _("Hours"), "fieldname": "working_hours", "format": "hours"},
+		),
+		rows=rows,
+	)
+
+
+def get_pending_leave_breakdown() -> dict:
+	"""Deliberately not scoped to the selected day -- this tile is a backlog."""
+	rows = frappe.get_list(
+		"Leave Application",
+		filters={"status": "Open", "docstatus": ["<", 2]},
+		fields=[
+			"employee",
+			"employee_name",
+			"department",
+			"leave_type",
+			"from_date",
+			"to_date",
+			"total_leave_days",
+		],
+		order_by="from_date asc",
+		limit=SNAPSHOT_BREAKDOWN_LIMIT,
+	)
+
+	return frappe._dict(
+		columns=attendance_columns(
+			{"label": _("Leave Type"), "fieldname": "leave_type"},
+			{"label": _("From"), "fieldname": "from_date", "format": "date"},
+			{"label": _("To"), "fieldname": "to_date", "format": "date"},
+			{"label": _("Days"), "fieldname": "total_leave_days"},
+		),
+		rows=rows,
+	)
 
 
 # Attendance

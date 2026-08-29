@@ -73,11 +73,14 @@ doctype_js = {
 # 	"Role": "home_page"
 # }
 
-# Desk login ignores get_website_user_home_page (that's website users only),
-# so also set home_page on session creation. Employees AND HR/admin land on
-# My Dashboard; the header Frappe HR chip is how they get into the HR workspace.
+# Employees AND HR/admin land on My Dashboard after login; the header Frappe HR
+# chip is how they get into the HR workspace. Three parts, all needed:
+# - get_website_user_home_page: what get_home_page() resolves to for website users
+# - on_login: forces the same answer for desk users, ahead of default workspace/cache
+# - before_request: drops the ?redirect-to= that would otherwise beat home_page
 get_website_user_home_page = "hrms.hr.utils.get_employee_home_page"
-on_session_creation = "hrms.hr.utils.redirect_to_hr_dashboard"
+on_login = "hrms.hr.utils.set_hr_dashboard_home_page"
+before_request = ["hrms.hr.utils.drop_desk_login_redirect"]
 
 # ...and a way back to it from anywhere in Desk, since nothing else routes there.
 # Declared as an Action rather than a Route because the settings dropdown spreads

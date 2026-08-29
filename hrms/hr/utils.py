@@ -1048,6 +1048,9 @@ def check_app_permission():
 	return False
 
 
+HR_DASHBOARD_PATH = "/desk/hr-dashboard"
+
+
 def should_open_hr_dashboard(user: str) -> bool:
 	"""True when this user should land on My Dashboard after login."""
 	if not user or user == "Guest":
@@ -1057,22 +1060,60 @@ def should_open_hr_dashboard(user: str) -> bool:
 
 
 def get_employee_home_page(user: str) -> str | None:
-	"""Home page for website-user logins. Desk logins use redirect_to_hr_dashboard."""
+	"""`get_website_user_home_page` hook: home page for website-user logins."""
 	if should_open_hr_dashboard(user):
-		return "/desk/hr-dashboard"
+		return HR_DASHBOARD_PATH
 	return None
 
 
-def redirect_to_hr_dashboard(login_manager=None):
-	"""Always send desk users to My Dashboard after login.
+def set_hr_dashboard_home_page(login_manager=None):
+	"""`on_login` hook: make My Dashboard the landing page the login response reports.
 
-	Frappe's login.js prefers ?redirect-to= (the page you logged out from) over
-	home_page. We still set home_page so that once redirect-to is stripped on
-	the login page, this is where the session lands.
+	Setting frappe.local.response["home_page"] from a login hook does nothing:
+	LoginManager.post_login runs on_login -> make_session (which fires
+	on_session_creation) -> set_user_info, and set_user_info *overwrites* it with
+	`get_home_page() or "/desk"`. So the value has to come out of get_home_page()
+	itself, and frappe.local.flags.home_page is its first and only verbatim input --
+	it wins over Role.home_page, over the home-page hooks, over the user's default
+	workspace, and it skips the per-user `home_page` redis cache that would
+	otherwise keep serving a stale answer.
 	"""
 	user = getattr(login_manager, "user", None) or frappe.session.user
 	if should_open_hr_dashboard(user):
-		frappe.local.response["home_page"] = "/desk/hr-dashboard"
+		frappe.local.flags.home_page = HR_DASHBOARD_PATH
+
+
+def drop_desk_login_redirect():
+	"""`before_request` hook: drop `?redirect-to=/desk/...` before the login page renders.
+
+	This is what actually puts people back on the page they logged out from.
+	login.js resolves the destination as
+
+	    window.location.href = sanitise_redirect(get_url_arg("redirect-to")) || data.home_page
+
+	so redirect-to beats home_page unconditionally, and two different places hand
+	it out: frappe.app.redirect_to_login() on logout, and www/desk.py, which 302s
+	*any* guest hit on a /desk URL to /login?redirect-to=<path> (expired session,
+	restored tab, bookmark). Removing the parameter server-side is the only spot
+	that covers both without patching the framework. Website/portal deep links are
+	left intact -- only desk targets are dropped.
+	"""
+	from urllib.parse import urlencode
+
+	from werkzeug.routing import RequestRedirect
+
+	request = getattr(frappe.local, "request", None)
+	if not request or request.method != "GET" or request.path.rstrip("/") != "/login":
+		return
+
+	if not (request.args.get("redirect-to") or "").startswith(("/desk", "/app")):
+		return
+
+	query = urlencode([(k, v) for k, v in request.args.items(multi=True) if k != "redirect-to"])
+	redirect = RequestRedirect(f"/login?{query}" if query else "/login")
+	# RequestRedirect defaults to a permanent 308, which browsers cache
+	redirect.code = 302
+	raise redirect
 
 
 def get_exact_month_diff(string_ed_date: DateTimeLikeObject, string_st_date: DateTimeLikeObject) -> int:

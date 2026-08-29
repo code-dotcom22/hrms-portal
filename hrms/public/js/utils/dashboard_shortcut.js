@@ -11,15 +11,15 @@ function is_on_hr_dashboard() {
 	return first === HR_DASHBOARD_ROUTE;
 }
 
+// Last line of defence only: hooks.py already pins home_page to /desk/hr-dashboard
+// and strips ?redirect-to= before the login page renders, so this normally finds
+// itself already on the dashboard and does nothing. It fires strictly on a
+// navigation that came from /login -- an unconditional "landing route" check here
+// used to hijack workspace deep links (frappe.get_route() is ["Workspaces", ...])
+// on ordinary page loads.
 function redirect_to_dashboard_on_landing() {
 	if (frappe._hr_dashboard_redirected || is_on_hr_dashboard()) return;
-
-	const from_login = /\/login/i.test(document.referrer || "");
-	const route = (frappe.get_route_str && frappe.get_route_str()) || "";
-	const first = (frappe.get_route() || [])[0] || "";
-	const landing = new Set(["", "home", "apps", "Workspaces", "workspace"]);
-
-	if (!from_login && !landing.has(route) && !landing.has(first)) return;
+	if (!/\/login/i.test(document.referrer || "")) return;
 
 	frappe._hr_dashboard_redirected = true;
 	frappe.set_route(HR_DASHBOARD_ROUTE);

@@ -13,6 +13,12 @@
 
 				<div class="flex flex-row gap-2">
 					<Button
+						v-if="props.doctype === 'Employee Checkin'"
+						icon="download"
+						variant="subtle"
+						@click="exportAttendance"
+					/>
+					<Button
 						id="show-filter-modal"
 						icon="filter"
 						variant="subtle"
@@ -141,7 +147,7 @@ import {
 	IonRefresherContent,
 } from "@ionic/vue"
 
-import { FeatherIcon, createResource, LoadingIndicator, debounce } from "frappe-ui"
+import { FeatherIcon, createResource, LoadingIndicator, debounce, call, toast } from "frappe-ui"
 
 import TabButtons from "@/components/TabButtons.vue"
 import EmployeeCheckinItem from "@/components/EmployeeCheckinItem.vue"
@@ -345,6 +351,76 @@ function clearFilters() {
 	fetchDocumentList()
 	modalController.dismiss()
 	areFiltersApplied.value = false
+}
+
+async function exportAttendance() {
+	const args = {
+		employee: isTeamRequest.value ? undefined : employee.data?.name,
+	}
+
+	for (const [fieldname, filter] of Object.entries(filterMap)) {
+		let condition = filter.condition
+		let value = filter.value
+		if (typeof condition === "object" && condition !== null) {
+			condition = condition.value
+		}
+		if (!condition || !value) continue
+
+		if (fieldname === "time") {
+			if (condition === ">=" || condition === ">") {
+				args.from_date = dayjs(value).format("YYYY-MM-DD")
+			} else if (condition === "<=" || condition === "<") {
+				args.to_date = dayjs(value).format("YYYY-MM-DD")
+			} else if (condition === "=") {
+				args.from_date = dayjs(value).format("YYYY-MM-DD")
+				args.to_date = dayjs(value).format("YYYY-MM-DD")
+			}
+		} else if (fieldname === "log_type") {
+			args.log_type = value
+		}
+	}
+
+	if (!args.from_date || !args.to_date) {
+		args.to_date = dayjs().format("YYYY-MM-DD")
+		args.from_date = dayjs().subtract(30, "day").format("YYYY-MM-DD")
+	}
+
+	try {
+		const result = await call("hrms.api.export_employee_checkins", args)
+		if (!result?.rows?.length) {
+			toast({ title: __("No check-in records found for the selected filters."), icon: "alert-circle" })
+			return
+		}
+		downloadCsv(result.rows, `${result.filename}.csv`)
+		toast({ title: __("Attendance exported"), icon: "check-circle" })
+	} catch (error) {
+		toast({
+			title: error?.message || __("Could not export attendance"),
+			icon: "alert-circle",
+		})
+	}
+}
+
+function downloadCsv(rows, filename) {
+	const csv = rows
+		.map((row) =>
+			row
+				.map((cell) => {
+					const value = cell === null || cell === undefined ? "" : String(cell)
+					return `"${value.replace(/"/g, '""')}"`
+				})
+				.join(","),
+		)
+		.join("\n")
+
+	const blob = new Blob([csv], { type: "text/csv;charset=UTF-8" })
+	const link = document.createElement("a")
+	link.href = URL.createObjectURL(blob)
+	link.download = filename
+	document.body.appendChild(link)
+	link.click()
+	document.body.removeChild(link)
+	URL.revokeObjectURL(link.href)
 }
 
 function fetchDocumentList(start = 0) {

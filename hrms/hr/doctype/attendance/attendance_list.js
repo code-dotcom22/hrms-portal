@@ -11,6 +11,60 @@ frappe.listview_settings["Attendance"] = {
 		}
 	},
 	onload: function (list_view) {
+		if (frappe.user.has_role(["System Manager", "HR Manager", "HR User"])) {
+			list_view.page.add_inner_button(__("Export Attendance"), function () {
+				const dialog = new frappe.ui.Dialog({
+					title: __("Export Attendance"),
+					fields: [
+						{
+							fieldtype: "HTML",
+							options: `<p class="text-muted small">${__(
+								"Exports attendance for all companies and all employees in the selected date range.",
+							)}</p>`,
+						},
+						{
+							fieldname: "from_date",
+							label: __("From Date"),
+							fieldtype: "Date",
+							default: frappe.datetime.month_start(),
+							reqd: 1,
+						},
+						{
+							fieldname: "to_date",
+							label: __("To Date"),
+							fieldtype: "Date",
+							default: frappe.datetime.get_today(),
+							reqd: 1,
+						},
+					],
+					primary_action_label: __("Export CSV"),
+					primary_action: function (values) {
+						frappe.call({
+							method: "hrms.api.export_attendance_summary",
+							args: values,
+							freeze: true,
+							freeze_message: __("Preparing export..."),
+							callback: function (r) {
+								if (!r.message?.rows?.length) {
+									frappe.msgprint(
+										__("No attendance records found for the selected filters."),
+									);
+									return;
+								}
+								frappe.tools.downloadify(r.message.rows, null, r.message.filename);
+								frappe.show_alert({
+									message: __("Attendance exported"),
+									indicator: "green",
+								});
+							},
+						});
+						dialog.hide();
+					},
+				});
+				dialog.show();
+			});
+		}
+
 		let me = this;
 		if (frappe.perm.has_perm("Attendance", 0, "create")) {
 			list_view.page.add_inner_button(__("Mark Attendance"), function () {

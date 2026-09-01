@@ -20,6 +20,11 @@ const EMPLOYEE_CHECKIN_FIELDS = ["name", "log_type", "time", "latitude", "longit
 
 const FILTER_CONFIG = [
 	{
+		fieldname: "time",
+		fieldtype: "Date",
+		label: __("Date"),
+	},
+	{
 		fieldname: "log_type",
 		fieldtype: "Select",
 		label: __("Log Type"),

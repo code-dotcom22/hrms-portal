@@ -564,6 +564,13 @@
 	gap: 8px;
 }
 
+.hr-snapshot-export {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	height: 32px;
+}
+
 /* ‹ date › as one joined control rather than three loose boxes. */
 .hr-snapshot-stepper {
 	display: inline-flex;

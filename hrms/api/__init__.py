@@ -27,6 +27,7 @@ SUPPORTED_FIELD_TYPES = [
 ]
 
 MAX_SUMMARY_RANGE_DAYS = 366
+MAX_ATTENDANCE_EXPORT_DAYS = 93
 
 # Roles allowed to look past their own record: browse another employee's dashboard,
 # and read the company-wide daily snapshot.
@@ -453,6 +454,315 @@ def get_recent_checkins(date, limit: int = 10) -> list[dict]:
 def get_checkin_day_filters(date) -> dict:
 	# `time` is a Datetime, so a plain equality on the date won't match; bound the day.
 	return {"time": ["between", [f"{date} 00:00:00", f"{date} 23:59:59.999999"]]}
+
+
+def get_checkin_range_filters(from_date, to_date) -> dict:
+	return {
+		"time": ["between", [f"{from_date} 00:00:00", f"{to_date} 23:59:59.999999"]],
+	}
+
+
+def strip_label_suffix(value: str | None) -> str:
+	return (value or "").split(" - ")[0]
+
+
+def format_export_time(value) -> str:
+	if not value:
+		return ""
+	from frappe.utils import get_datetime
+
+	dt = get_datetime(value)
+	return dt.strftime("%H:%M:%S") if dt else ""
+
+
+def validate_attendance_export_range(from_date, to_date) -> tuple:
+	from_date = getdate(from_date)
+	to_date = getdate(to_date or from_date)
+
+	if from_date > to_date:
+		frappe.throw(_("From Date cannot be after To Date"))
+	if date_diff(to_date, from_date) > MAX_ATTENDANCE_EXPORT_DAYS:
+		frappe.throw(_("Date range cannot exceed {0} days").format(MAX_ATTENDANCE_EXPORT_DAYS))
+	if to_date > getdate():
+		frappe.throw(_("Cannot export attendance for a future date"))
+
+	return from_date, to_date
+
+
+def get_checkin_summary_map(
+	from_date,
+	to_date,
+	company: str | None = None,
+	department: str | None = None,
+	employee: str | None = None,
+) -> dict[tuple[str, str], dict]:
+	conditions = ["c.time BETWEEN %(from_datetime)s AND %(to_datetime)s"]
+	values = {
+		"from_datetime": f"{from_date} 00:00:00",
+		"to_datetime": f"{to_date} 23:59:59.999999",
+	}
+	join = ""
+
+	if company or department:
+		join = "INNER JOIN `tabEmployee` e ON e.name = c.employee"
+		if company:
+			conditions.append("e.company = %(company)s")
+			values["company"] = company
+		if department:
+			conditions.append("e.department = %(department)s")
+			values["department"] = department
+
+	if employee:
+		conditions.append("c.employee = %(employee)s")
+		values["employee"] = employee
+
+	rows = frappe.db.sql(
+		f"""
+		SELECT
+			DATE(c.time) AS checkin_date,
+			c.employee,
+			c.employee_name,
+			e.department,
+			e.company,
+			MIN(c.time) AS first_in,
+			MAX(c.time) AS last_out,
+			COUNT(c.name) AS logs
+		FROM `tabEmployee Checkin` c
+		{join or "LEFT JOIN `tabEmployee` e ON e.name = c.employee"}
+		WHERE {" AND ".join(conditions)}
+		GROUP BY DATE(c.time), c.employee, c.employee_name, e.department, e.company
+		ORDER BY checkin_date ASC, c.employee_name ASC
+		""",
+		values,
+		as_dict=True,
+	)
+
+	return {(row.employee, str(row.checkin_date)): row for row in rows}
+
+
+@frappe.whitelist()
+def export_attendance_summary(
+	from_date: str | None = None,
+	to_date: str | None = None,
+	company: str | None = None,
+	department: str | None = None,
+	employee: str | None = None,
+	status: str | None = None,
+) -> dict:
+	"""Export attendance with mark in/out for HR admins."""
+	if not has_elevated_hr_role():
+		frappe.throw(_("Not permitted to export attendance"), frappe.PermissionError)
+
+	from_date, to_date = validate_attendance_export_range(
+		from_date or frappe.utils.today(),
+		to_date or from_date,
+	)
+
+	attendance_filters = {
+		"attendance_date": ["between", [from_date, to_date]],
+		"docstatus": 1,
+	}
+	if company:
+		attendance_filters["company"] = company
+	if department:
+		attendance_filters["department"] = department
+	if employee:
+		attendance_filters["employee"] = employee
+	if status:
+		attendance_filters["status"] = status
+
+	attendance_rows = frappe.get_list(
+		"Attendance",
+		filters=attendance_filters,
+		fields=[
+			"attendance_date",
+			"employee",
+			"employee_name",
+			"department",
+			"company",
+			"status",
+			"in_time",
+			"out_time",
+			"working_hours",
+			"late_entry",
+			"early_exit",
+			"leave_type",
+		],
+		order_by="attendance_date asc, employee_name asc",
+		limit_page_length=0,
+	)
+
+	checkin_map = get_checkin_summary_map(from_date, to_date, company, department, employee)
+	exported_keys: set[tuple[str, str]] = set()
+	csv_rows = []
+
+	header = [
+		_("Date"),
+		_("Employee"),
+		_("Employee Name"),
+		_("Department"),
+		_("Company"),
+		_("Status"),
+		_("Mark In"),
+		_("Mark Out"),
+		_("Working Hours"),
+		_("Late Entry"),
+		_("Early Exit"),
+		_("Leave Type"),
+		_("Check-in Logs"),
+	]
+
+	for row in attendance_rows:
+		date_str = str(row.attendance_date)
+		key = (row.employee, date_str)
+		exported_keys.add(key)
+		checkin = checkin_map.get(key, {})
+		csv_rows.append(
+			[
+				date_str,
+				row.employee,
+				row.employee_name,
+				strip_label_suffix(row.department),
+				strip_label_suffix(row.company),
+				row.status,
+				format_export_time(row.in_time or checkin.get("first_in")),
+				format_export_time(row.out_time or checkin.get("last_out")),
+				flt(row.working_hours, 2),
+				1 if row.late_entry else 0,
+				1 if row.early_exit else 0,
+				row.leave_type or "",
+				cint(checkin.get("logs")) or "",
+			]
+		)
+
+	if not status:
+		for key, checkin in checkin_map.items():
+			if key in exported_keys:
+				continue
+			emp, date_str = key
+			csv_rows.append(
+				[
+					date_str,
+					emp,
+					checkin.get("employee_name"),
+					strip_label_suffix(checkin.get("department")),
+					strip_label_suffix(checkin.get("company")),
+					_("Checked In"),
+					format_export_time(checkin.get("first_in")),
+					format_export_time(checkin.get("last_out")),
+					"",
+					"",
+					"",
+					"",
+					cint(checkin.get("logs")) or "",
+				]
+			)
+
+	csv_rows.sort(key=lambda row: (row[0], row[2] or row[1]))
+	filename = f"attendance_{from_date}" if from_date == to_date else f"attendance_{from_date}_to_{to_date}"
+
+	return {"filename": filename, "rows": [header, *csv_rows]}
+
+
+@frappe.whitelist()
+def export_employee_checkins(
+	from_date: str | None = None,
+	to_date: str | None = None,
+	company: str | None = None,
+	department: str | None = None,
+	employee: str | None = None,
+	log_type: str | None = None,
+) -> dict:
+	"""Export raw employee check-in logs for the list view / mobile app."""
+	filters = {}
+	if from_date and to_date:
+		from_date, to_date = validate_attendance_export_range(from_date, to_date)
+		filters.update(get_checkin_range_filters(from_date, to_date))
+	elif from_date:
+		filters.update(get_checkin_day_filters(getdate(from_date)))
+	elif to_date:
+		filters.update(get_checkin_day_filters(getdate(to_date)))
+
+	if log_type:
+		filters["log_type"] = log_type
+
+	if employee:
+		filters["employee"] = employee
+	elif not has_elevated_hr_role():
+		linked_employee = frappe.db.get_value("Employee", {"user_id": frappe.session.user}, "name")
+		if not linked_employee:
+			frappe.throw(_("No employee record is linked to your account"), frappe.PermissionError)
+		filters["employee"] = linked_employee
+
+	employee_filters = {}
+	if company:
+		employee_filters["company"] = company
+	if department:
+		employee_filters["department"] = department
+
+	if employee_filters:
+		employee_names = frappe.get_list(
+			"Employee",
+			filters=employee_filters,
+			pluck="name",
+			limit_page_length=0,
+		)
+		if not employee_names:
+			return {"filename": "employee_checkins", "rows": [[_("No records found")]]}
+		if filters.get("employee"):
+			if filters["employee"] not in employee_names:
+				return {"filename": "employee_checkins", "rows": [[_("No records found")]]}
+		else:
+			filters["employee"] = ["in", employee_names]
+
+	rows = frappe.get_list(
+		"Employee Checkin",
+		filters=filters,
+		fields=[
+			"employee",
+			"employee_name",
+			"log_type",
+			"time",
+			"shift",
+			"device_id",
+		],
+		order_by="time desc",
+		limit_page_length=0,
+	)
+
+	header = [
+		_("Employee"),
+		_("Employee Name"),
+		_("Log Type"),
+		_("Date"),
+		_("Time"),
+		_("Shift"),
+		_("Device"),
+	]
+	csv_rows = [
+		[
+			row.employee,
+			row.employee_name,
+			row.log_type,
+			str(getdate(row.time)),
+			format_export_time(row.time),
+			row.shift or "",
+			row.device_id or "",
+		]
+		for row in rows
+	]
+
+	filename = "employee_checkins"
+	if from_date and to_date:
+		filename = (
+			f"employee_checkins_{from_date}"
+			if from_date == to_date
+			else f"employee_checkins_{from_date}_to_{to_date}"
+		)
+
+	return {"filename": filename, "rows": [header, *csv_rows]}
+
+
 # Every tile on the snapshot stands for a set of people, so each one can be opened.
 # Keyed by the metric the client sends; the five attendance ones differ only by status.
 SNAPSHOT_STATUS_METRICS = {

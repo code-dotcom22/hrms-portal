@@ -1,3 +1,5 @@
+frappe.provide("hrms");
+
 frappe.pages["hr-dashboard"].on_page_load = function (wrapper) {
 	const page = frappe.ui.make_app_page({
 		parent: wrapper,
@@ -243,6 +245,10 @@ hrms.HRDashboard = class HRDashboard {
 					<div class="hr-snapshot-subtitle text-muted"></div>
 				</div>
 				<div class="hr-snapshot-date-controls">
+					<button type="button" class="btn btn-default btn-sm hr-snapshot-export">
+						<svg class="icon icon-sm"><use href="#icon-download"></use></svg>
+						${__("Export Attendance")}
+					</button>
 					<div class="hr-snapshot-stepper">
 						<button
 							type="button"
@@ -303,6 +309,9 @@ hrms.HRDashboard = class HRDashboard {
 		});
 		this.$snapshot.on("change", ".hr-snapshot-date", () => {
 			this.set_snapshot_date(this.$snapshot_date.val());
+		});
+		this.$snapshot.on("click", ".hr-snapshot-export", () => {
+			this.show_export_attendance_dialog();
 		});
 
 		// Every tile stands for a set of people, so every tile opens that set.
@@ -665,6 +674,12 @@ hrms.HRDashboard = class HRDashboard {
 			title: label,
 			size: "large",
 			fields: [{ fieldtype: "HTML", fieldname: "breakdown" }],
+			primary_action_label: __("Export CSV"),
+			primary_action: () => {
+				if (dialog.export_data) {
+					this.download_breakdown_csv(dialog.export_data, label);
+				}
+			},
 		});
 		const $body = dialog.fields_dict.breakdown.$wrapper;
 
@@ -689,6 +704,7 @@ hrms.HRDashboard = class HRDashboard {
 				// builds the modal detached from the document, so any visibility test on
 				// it can read false and strand the dialog on "Loading...". Rendering into
 				// a dialog the user already closed costs nothing -- it's thrown away.
+				dialog.export_data = r.message;
 				$body.html(this.get_breakdown_html(r.message));
 			},
 			error: () => {
@@ -699,6 +715,96 @@ hrms.HRDashboard = class HRDashboard {
 				);
 			},
 		});
+	}
+
+	show_export_attendance_dialog() {
+		const dialog = new frappe.ui.Dialog({
+			title: __("Export Attendance"),
+			fields: [
+				{
+					fieldtype: "HTML",
+					options: `<p class="text-muted small">${__(
+						"Exports attendance for all companies and all employees in the selected date range.",
+					)}</p>`,
+				},
+				{
+					fieldname: "from_date",
+					label: __("From Date"),
+					fieldtype: "Date",
+					default: this.snapshot_date,
+					reqd: 1,
+				},
+				{
+					fieldname: "to_date",
+					label: __("To Date"),
+					fieldtype: "Date",
+					default: this.snapshot_date,
+					reqd: 1,
+				},
+			],
+			primary_action_label: __("Export CSV"),
+			primary_action: (values) => {
+				this.export_attendance_summary(values);
+				dialog.hide();
+			},
+		});
+		dialog.show();
+	}
+
+	export_attendance_summary(filters) {
+		frappe.call({
+			method: "hrms.api.export_attendance_summary",
+			args: filters,
+			freeze: true,
+			freeze_message: __("Preparing export..."),
+			callback: (r) => {
+				if (!r.message?.rows?.length) {
+					frappe.msgprint(__("No attendance records found for the selected filters."));
+					return;
+				}
+				frappe.tools.downloadify(r.message.rows, null, r.message.filename);
+				frappe.show_alert({
+					message: __("Attendance exported"),
+					indicator: "green",
+				});
+			},
+		});
+	}
+
+	download_breakdown_csv(data, label) {
+		if (!data?.rows?.length) {
+			frappe.msgprint(__("No data to export"));
+			return;
+		}
+
+		const header = (data.columns || []).map((column) => column.label);
+		const rows = data.rows.map((row) =>
+			(data.columns || []).map((column) => this.get_breakdown_cell_export_value(row, column)),
+		);
+		const filename = `attendance_${frappe.scrub(label)}_${data.date || this.snapshot_date}`;
+		frappe.tools.downloadify([header, ...rows], null, filename);
+		frappe.show_alert({
+			message: __("Attendance exported"),
+			indicator: "green",
+		});
+	}
+
+	get_breakdown_cell_export_value(row, column) {
+		const value = row[column.fieldname];
+		if (value === null || value === undefined || value === "") {
+			return "";
+		}
+
+		switch (column.format) {
+			case "time":
+				return frappe.datetime.str_to_user(value, true);
+			case "date":
+				return frappe.datetime.str_to_user(value);
+			case "department":
+				return this.strip_abbr(value);
+			default:
+				return String(value);
+		}
 	}
 
 	get_breakdown_html(data) {

@@ -13,6 +13,7 @@ frappe.ui.form.on("Expense Claim", {
 					["employee", "=", frm.doc.employee],
 					["paid_amount", ">", 0],
 					["status", "not in", ["Claimed", "Returned", "Partly Claimed and Returned"]],
+					["currency", "=", frm.doc.currency],
 				],
 			};
 		});
@@ -73,6 +74,10 @@ frappe.ui.form.on("Expense Claim", {
 				},
 			};
 		});
+
+		frm.make_methods = {
+			"Payment Entry": () => frm.events.make_payment_entry(frm),
+		};
 	},
 
 	onload: function (frm) {
@@ -103,6 +108,7 @@ frappe.ui.form.on("Expense Claim", {
 		if (
 			frm.doc.docstatus === 1 &&
 			frm.doc.status !== "Paid" &&
+			frm.doc.approval_status !== "Rejected" &&
 			frappe.model.can_create("Payment Entry")
 		) {
 			frm.add_custom_button(
@@ -140,9 +146,9 @@ frappe.ui.form.on("Expense Claim", {
 	},
 
 	currency: function (frm) {
+		frm.trigger("set_exchange_rate");
 		frm.trigger("update_fields_label");
 		frm.trigger("update_child_fields_label");
-		frm.trigger("set_exchange_rate");
 	},
 
 	set_exchange_rate: function (frm) {
@@ -265,16 +271,7 @@ frappe.ui.form.on("Expense Claim", {
 		}
 
 		if (!frm.doc.__islocal && frm.doc.docstatus === 1) {
-			let entry_doctype, entry_reference_doctype, entry_reference_name;
-			if (frm.doc.__onload.make_payment_via_journal_entry) {
-				entry_doctype = "Journal Entry";
-				entry_reference_doctype = "Journal Entry Account.reference_type";
-				entry_reference_name = "Journal Entry.reference_name";
-			} else {
-				entry_doctype = "Payment Entry";
-				entry_reference_doctype = "Payment Entry Reference.reference_doctype";
-				entry_reference_name = "Payment Entry Reference.reference_name";
-			}
+			const entry_doctype = "Payment Entry";
 
 			if (
 				cint(frm.doc.total_amount_reimbursed) > 0 &&
@@ -361,12 +358,8 @@ frappe.ui.form.on("Expense Claim", {
 		});
 	},
 	make_payment_entry: function (frm) {
-		let method = "hrms.overrides.employee_payment_entry.get_payment_entry_for_employee";
-		if (frm.doc.__onload && frm.doc.__onload.make_payment_via_journal_entry) {
-			method = "hrms.hr.doctype.expense_claim.expense_claim.make_bank_entry";
-		}
 		return frappe.call({
-			method: method,
+			method: "hrms.overrides.employee_payment_entry.get_payment_entry_for_employee",
 			args: {
 				dt: frm.doc.doctype,
 				dn: frm.doc.name,
@@ -458,7 +451,6 @@ frappe.ui.form.on("Expense Claim", {
 	},
 
 	get_advances: function (frm) {
-		frappe.model.clear_table(frm.doc, "advances");
 		if (frm.doc.employee) {
 			return frappe.call({
 				method: "hrms.hr.doctype.expense_claim.expense_claim.get_advances",
@@ -466,6 +458,7 @@ frappe.ui.form.on("Expense Claim", {
 					expense_claim: frm.doc,
 				},
 				callback: function (r, rt) {
+					frappe.model.clear_table(frm.doc, "advances");
 					if (r.message) {
 						$.each(r.message, function (i, d) {
 							var row = frappe.model.add_child(
@@ -481,8 +474,8 @@ frappe.ui.form.on("Expense Claim", {
 							row.return_amount = flt(d.return_amount);
 							row.allocated_amount = d.allocated_amount;
 							row.exchange_rate = d.exchange_rate;
-							row.payment_entry = d.payment_entry;
-							row.payment_entry_reference = d.payment_entry_reference;
+							row.reference_type = d.reference_type;
+							row.reference_name = d.reference_name;
 						});
 						refresh_field("advances");
 					}
@@ -527,6 +520,16 @@ frappe.ui.form.on("Expense Claim Detail", {
 		if (!d.expense_type) {
 			return;
 		}
+
+		// Fetch description only if empty
+		if (!d.description) {
+			frappe.db.get_value("Expense Claim Type", d.expense_type, "description").then((r) => {
+				if (r.message && r.message.description) {
+					frappe.model.set_value(cdt, cdn, "description", r.message.description);
+				}
+			});
+		}
+
 		return frappe.call({
 			method: "hrms.hr.doctype.expense_claim.expense_claim.get_expense_claim_account_and_cost_center",
 			args: {
@@ -575,7 +578,7 @@ frappe.ui.form.on("Expense Claim Advance", {
 					advance_id: child.employee_advance,
 				},
 				callback: function (r, rt) {
-					if (r.message) {
+					if (r.message && r.message.length > 0) {
 						child.employee_advance = r.message[0].employee_advance;
 						child.posting_date = r.message[0].posting_date;
 						child.advance_account = r.message[0].advance_account;
@@ -584,8 +587,8 @@ frappe.ui.form.on("Expense Claim Advance", {
 						child.return_amount = flt(r.message[0].return_amount);
 						child.allocated_amount = flt(r.message[0].allocated_amount);
 						child.exchange_rate = r.message[0].exchange_rate;
-						child.payment_entry = r.message[0].payment_entry;
-						child.payment_entry_reference = r.message[0].payment_entry_reference;
+						child.reference_type = r.message[0].reference_type;
+						child.reference_name = r.message[0].reference_name;
 						set_in_company_currency(
 							frm,
 							child,
@@ -594,6 +597,15 @@ frappe.ui.form.on("Expense Claim Advance", {
 						);
 						set_in_company_currency(frm, child, ["allocated_amount"]);
 						refresh_field("advances");
+					} else {
+						frm.doc.advances = [];
+						frappe.validated = false;
+						refresh_field("advances");
+						frappe.throw(
+							__("Selected employee advance is not of employee {0}", [
+								frm.doc.employee,
+							]),
+						);
 					}
 				},
 			});

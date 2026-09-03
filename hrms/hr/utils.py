@@ -163,7 +163,7 @@ def update_to_date_in_work_history(employee, cancel):
 
 
 @frappe.whitelist()
-def get_employee_field_property(employee, fieldname):
+def get_employee_field_property(employee: str, fieldname: str):
 	if not (employee and fieldname):
 		return
 
@@ -240,9 +240,9 @@ def get_doc_condition(doctype):
 		or work_end_date between %(from_date)s and %(to_date)s \
 		or (work_from_date < %(from_date)s and work_end_date > %(to_date)s))"
 	elif doctype == "Leave Period":
-		return "and company = %(company)s and (from_date between %(from_date)s and %(to_date)s \
-			or to_date between %(from_date)s and %(to_date)s \
-			or (from_date < %(from_date)s and to_date > %(to_date)s))"
+		return "and company = %(company)s and (`from_date` between %(from_date)s and %(to_date)s \
+			or `to_date` between %(from_date)s and %(to_date)s \
+			or (`from_date` < %(from_date)s and `to_date` > %(to_date)s))"
 
 
 def throw_overlap_error(doc, exists_for, overlap_doc, from_date, to_date):
@@ -309,19 +309,21 @@ def get_total_exemption_amount(declarations):
 
 
 @frappe.whitelist()
-def get_leave_period(from_date, to_date, company):
-	leave_period = frappe.db.sql(
-		"""
-		select name, from_date, to_date
-		from `tabLeave Period`
-		where company=%(company)s and is_active=1
-			and (from_date between %(from_date)s and %(to_date)s
-				or to_date between %(from_date)s and %(to_date)s
-				or (from_date < %(from_date)s and to_date > %(to_date)s))
-	""",
-		{"from_date": from_date, "to_date": to_date, "company": company},
-		as_dict=1,
-	)
+def get_leave_period(from_date: str | datetime.date, to_date: str | datetime.date, company: str):
+	LeavePeriod = frappe.qb.DocType("Leave Period")
+	leave_period = (
+		frappe.qb.from_(LeavePeriod)
+		.select(LeavePeriod.name, LeavePeriod.from_date, LeavePeriod.to_date)
+		.where(
+			(LeavePeriod.company == company)
+			& (LeavePeriod.is_active == 1)
+			& (
+				LeavePeriod.from_date[from_date:to_date]
+				| LeavePeriod.to_date[from_date:to_date]
+				| ((LeavePeriod.from_date < from_date) & (LeavePeriod.to_date > to_date))
+			)
+		)
+	).run(as_dict=1)
 
 	if leave_period:
 		return leave_period
@@ -370,7 +372,11 @@ def allocate_earned_leaves():
 			else:
 				date_of_joining = frappe.db.get_value("Employee", allocation.employee, "date_of_joining")
 				allocation_date = get_expected_allocation_date_for_period(
-					e_leave_type.earned_leave_frequency, e_leave_type.allocate_on_day, today, date_of_joining
+					e_leave_type.earned_leave_frequency,
+					e_leave_type.allocate_on_day,
+					today,
+					date_of_joining,
+					effective_from=None,
 				)
 				annual_allocation = get_annual_allocation_from_policy(allocation, e_leave_type)
 				earned_leaves = calculate_upcoming_earned_leave(allocation, e_leave_type, date_of_joining)
@@ -417,38 +423,48 @@ def calculate_upcoming_earned_leave(allocation, e_leave_type, date_of_joining):
 
 def update_previous_leave_allocation(allocation, annual_allocation, e_leave_type, earned_leaves, today):
 	allocation = frappe.get_doc("Leave Allocation", allocation.name)
-	annual_allocation = flt(annual_allocation, allocation.precision("total_leaves_allocated"))
-
-	new_allocation = flt(allocation.total_leaves_allocated) + flt(earned_leaves)
-	new_allocation_without_cf = flt(
-		flt(allocation.get_existing_leave_count()) + flt(earned_leaves),
-		allocation.precision("total_leaves_allocated"),
+	precision = allocation.precision("total_leaves_allocated")
+	annual_allocation = flt(annual_allocation, precision)
+	earned_leaves = flt(earned_leaves, precision)
+	new_leaves_to_allocate_without_cf = flt(
+		flt(allocation.get_existing_leave_count()) + earned_leaves,
+		precision,
 	)
-
-	if new_allocation > e_leave_type.max_leaves_allowed and e_leave_type.max_leaves_allowed > 0:
-		frappe.throw(
-			_(
-				"Allocation was skipped due to maximum leave allocation limit set in leave type. Please increase the limit and retry failed allocation."
-			),
-			OverAllocationError,
-		)
 	if (
 		# annual allocation as per policy should not be exceeded except for yearly leaves
-		new_allocation_without_cf > annual_allocation and e_leave_type.earned_leave_frequency != "Yearly"
+		new_leaves_to_allocate_without_cf > annual_allocation
+		and e_leave_type.earned_leave_frequency != "Yearly"
 	):
 		frappe.throw(
 			_("Allocation was skipped due to exceeding annual allocation set in leave policy"),
 			OverAllocationError,
 		)
 
-	allocation.db_set("total_leaves_allocated", new_allocation, update_modified=False)
+	if e_leave_type.max_leaves_allowed:
+		leaves_quota = flt(e_leave_type.max_leaves_allowed - allocation.total_leaves_allocated, precision)
+		if leaves_quota <= 0:
+			frappe.throw(
+				_(
+					"Allocation was skipped due to maximum leave allocation limit set in leave type. Please increase the limit and retry failed allocation."
+				),
+				OverAllocationError,
+			)
+		else:
+			if leaves_quota < earned_leaves:
+				earned_leaves = leaves_quota
+
+	allocation.db_set(
+		"total_leaves_allocated",
+		earned_leaves + allocation.total_leaves_allocated,
+		update_modified=False,
+	)
 	create_additional_leave_ledger_entry(allocation, earned_leaves, today)
 	earned_leave_schedule = qb.DocType("Earned Leave Schedule")
 	qb.update(earned_leave_schedule).where(
 		(earned_leave_schedule.parent == allocation.name) & (earned_leave_schedule.allocation_date == today)
 	).set(earned_leave_schedule.is_allocated, 1).set(earned_leave_schedule.attempted, 1).set(
 		earned_leave_schedule.allocated_via, "Scheduler"
-	).run()
+	).set(earned_leave_schedule.number_of_leaves, earned_leaves).run()
 
 
 def log_allocation_error(allocation_name, error):
@@ -489,13 +505,13 @@ def send_email_for_failed_allocations(failed_allocations):
 
 @frappe.whitelist()
 def get_monthly_earned_leave(
-	date_of_joining,
-	annual_leaves,
-	frequency,
-	rounding,
-	period_start_date=None,
-	period_end_date=None,
-	pro_rated=True,
+	date_of_joining: str | datetime.date,
+	annual_leaves: float,
+	frequency: str,
+	rounding: str | float,
+	period_start_date: str | datetime.date | None = None,
+	period_end_date: str | datetime.date | None = None,
+	pro_rated: bool = True,
 ):
 	earned_leaves = 0.0
 	divide_by_frequency = {"Yearly": 1, "Half-Yearly": 2, "Quarterly": 4, "Monthly": 12}
@@ -516,11 +532,14 @@ def get_monthly_earned_leave(
 	return earned_leaves
 
 
-def get_sub_period_start_and_end(date, frequency):
+def get_sub_period_start_and_end(date, frequency, effective_from=None):
+	if frequency == "Half-Yearly" and effective_from:
+		return get_half_year_periods(date, effective_from)
+
 	return {
 		"Monthly": (get_first_day(date), get_last_day(date)),
 		"Quarterly": (get_quarter_start(date), get_quarter_ending(date)),
-		"Half-Yearly": (get_semester_start(date), get_semester_end(date)),
+		"Half-Yearly": (get_semester_start(date), get_semester_end(date)),  # fallback only
 		"Yearly": (get_year_start(date), get_year_ending(date)),
 	}.get(frequency)
 
@@ -595,11 +614,26 @@ def create_additional_leave_ledger_entry(allocation, leaves, date):
 	allocation.create_leave_ledger_entry()
 
 
-def get_expected_allocation_date_for_period(frequency, allocate_on_day, date, date_of_joining=None):
+def get_expected_allocation_date_for_period(
+	frequency, allocate_on_day, date, date_of_joining=None, effective_from=None
+):
 	try:
 		doj = date_of_joining.replace(month=date.month, year=date.year)
-	except ValueError:
+	except (ValueError, AttributeError):
 		doj = datetime.date(date.year, date.month, calendar.monthrange(date.year, date.month)[1])
+
+	if frequency == "Half-Yearly" and effective_from:
+		period_start, period_end = get_half_year_periods(date, effective_from)
+		half_yearly_dates = {
+			"First Day": period_start,
+			"Last Day": period_end,
+		}
+	else:
+		half_yearly_dates = {
+			"First Day": get_semester_start(date),
+			"Last Day": get_semester_end(date),
+		}
+
 	return {
 		"Monthly": {
 			"First Day": get_first_day(date),
@@ -610,7 +644,7 @@ def get_expected_allocation_date_for_period(frequency, allocate_on_day, date, da
 			"First Day": get_quarter_start(date),
 			"Last Day": get_quarter_ending(date),
 		},
-		"Half-Yearly": {"First Day": get_semester_start(date), "Last Day": get_semester_end(date)},
+		"Half-Yearly": half_yearly_dates,
 		"Yearly": {"First Day": get_year_start(date), "Last Day": get_year_ending(date)},
 	}[frequency][allocate_on_day]
 
@@ -965,7 +999,7 @@ def notify_bulk_action_status(doctype: str, failure: list, success: list) -> Non
 
 
 @frappe.whitelist()
-def set_geolocation_from_coordinates(doc):
+def set_geolocation_from_coordinates(doc: Document):
 	if not frappe.db.get_single_value("HR Settings", "allow_geolocation_tracking"):
 		return
 
@@ -1014,6 +1048,74 @@ def check_app_permission():
 	return False
 
 
+HR_DASHBOARD_PATH = "/desk/hr-dashboard"
+
+
+def should_open_hr_dashboard(user: str) -> bool:
+	"""True when this user should land on My Dashboard after login."""
+	if not user or user == "Guest":
+		return False
+	roles = set(frappe.get_roles(user))
+	return bool(roles & {"Employee", "System Manager", "HR Manager", "HR User"})
+
+
+def get_employee_home_page(user: str) -> str | None:
+	"""`get_website_user_home_page` hook: home page for website-user logins."""
+	if should_open_hr_dashboard(user):
+		return HR_DASHBOARD_PATH
+	return None
+
+
+def set_hr_dashboard_home_page(login_manager=None):
+	"""`on_login` hook: make My Dashboard the landing page the login response reports.
+
+	Setting frappe.local.response["home_page"] from a login hook does nothing:
+	LoginManager.post_login runs on_login -> make_session (which fires
+	on_session_creation) -> set_user_info, and set_user_info *overwrites* it with
+	`get_home_page() or "/desk"`. So the value has to come out of get_home_page()
+	itself, and frappe.local.flags.home_page is its first and only verbatim input --
+	it wins over Role.home_page, over the home-page hooks, over the user's default
+	workspace, and it skips the per-user `home_page` redis cache that would
+	otherwise keep serving a stale answer.
+	"""
+	user = getattr(login_manager, "user", None) or frappe.session.user
+	if should_open_hr_dashboard(user):
+		frappe.local.flags.home_page = HR_DASHBOARD_PATH
+
+
+def drop_desk_login_redirect():
+	"""`before_request` hook: drop `?redirect-to=/desk/...` before the login page renders.
+
+	This is what actually puts people back on the page they logged out from.
+	login.js resolves the destination as
+
+	    window.location.href = sanitise_redirect(get_url_arg("redirect-to")) || data.home_page
+
+	so redirect-to beats home_page unconditionally, and two different places hand
+	it out: frappe.app.redirect_to_login() on logout, and www/desk.py, which 302s
+	*any* guest hit on a /desk URL to /login?redirect-to=<path> (expired session,
+	restored tab, bookmark). Removing the parameter server-side is the only spot
+	that covers both without patching the framework. Website/portal deep links are
+	left intact -- only desk targets are dropped.
+	"""
+	from urllib.parse import urlencode
+
+	from werkzeug.routing import RequestRedirect
+
+	request = getattr(frappe.local, "request", None)
+	if not request or request.method != "GET" or request.path.rstrip("/") != "/login":
+		return
+
+	if not (request.args.get("redirect-to") or "").startswith(("/desk", "/app")):
+		return
+
+	query = urlencode([(k, v) for k, v in request.args.items(multi=True) if k != "redirect-to"])
+	redirect = RequestRedirect(f"/login?{query}" if query else "/login")
+	# RequestRedirect defaults to a permanent 308, which browsers cache
+	redirect.code = 302
+	raise redirect
+
+
 def get_exact_month_diff(string_ed_date: DateTimeLikeObject, string_st_date: DateTimeLikeObject) -> int:
 	"""Return the difference between given two dates in months."""
 	ed_date = getdate(string_ed_date)
@@ -1040,3 +1142,25 @@ def get_semester_end(date):
 		return get_year_ending(date)
 	else:
 		return add_months(get_year_ending(date), -6)
+
+
+def get_complete_month_count(date, effective_from):
+	"""Returns count of complete months from effective_from to date, accounting for day-of-month."""
+	month_count = (date.year - effective_from.year) * 12 + (date.month - effective_from.month)
+	# ignore a smaller day caused by a shorter month (e.g. 31st -> 28th)
+	if date.day < effective_from.day and date != get_last_day(date):
+		month_count -= 1
+	return month_count
+
+
+def get_half_year_periods(date, effective_from):
+	"""Return (start, end) of the half-year period containing date, relative to effective_from."""
+	effective_from = getdate(effective_from)
+	date = getdate(date)
+
+	half_years_passed = get_complete_month_count(date, effective_from) // 6
+
+	half_year_start = add_months(effective_from, half_years_passed * 6)
+	half_year_end = add_days(add_months(half_year_start, 6), -1)
+
+	return half_year_start, half_year_end

@@ -17,6 +17,41 @@ from hrms.hr.doctype.staffing_plan.staffing_plan import (
 
 
 class JobOpening(WebsiteGenerator):
+	# begin: auto-generated types
+	# This code is auto-generated. Do not modify anything in this block.
+
+	from typing import TYPE_CHECKING
+
+	if TYPE_CHECKING:
+		from frappe.types import DF
+
+		closed_on: DF.Date | None
+		closes_on: DF.Date | None
+		company: DF.Link
+		currency: DF.Link | None
+		department: DF.Link | None
+		description: DF.TextEditor | None
+		designation: DF.Link
+		employment_type: DF.Link | None
+		job_application_route: DF.Data | None
+		job_opening_template: DF.Link | None
+		job_requisition: DF.Link | None
+		job_title: DF.Data
+		location: DF.Link | None
+		lower_range: DF.Currency
+		planned_vacancies: DF.Int
+		posted_on: DF.Datetime | None
+		publish: DF.Check
+		publish_applications_received: DF.Check
+		publish_salary_range: DF.Check
+		route: DF.Data | None
+		salary_per: DF.Literal["Month", "Year"]
+		staffing_plan: DF.Link | None
+		status: DF.Literal["Open", "Closed"]
+		upper_range: DF.Currency
+		vacancies: DF.Int
+	# end: auto-generated types
+
 	website = frappe._dict(
 		template="templates/generators/job_opening.html",
 		condition_field="publish",
@@ -24,7 +59,7 @@ class JobOpening(WebsiteGenerator):
 	)
 
 	def autoname(self):
-		self.name = set_name_from_naming_options(frappe.get_meta(self.doctype).autoname, self)
+		set_name_from_naming_options(frappe.get_meta(self.doctype).autoname, self)
 
 	def validate(self):
 		if not self.route:
@@ -55,7 +90,26 @@ class JobOpening(WebsiteGenerator):
 		if self.status == "Closed":
 			self.validate_from_to_dates("posted_on", "closed_on")
 
+	@frappe.whitelist()
+	def get_close_warning(self):
+		if not self.is_opening_being_closed():
+			return
+
+		if not self.staffing_plan:
+			return
+
+		return _(
+			"Closing this Job Opening for {1} may not be according to the Staffing Plan {0}.<br><br>"
+			"Do you want to close this Job Opening?"
+		).format(
+			frappe.bold(get_link_to_form("Staffing Plan", self.staffing_plan)),
+			frappe.bold(self.designation),
+		)
+
 	def validate_current_vacancies(self):
+		if self.status == "Closed":
+			return
+
 		if not self.staffing_plan:
 			staffing_plan = get_active_staffing_plan_details(self.company, self.designation)
 			if staffing_plan:
@@ -87,6 +141,12 @@ class JobOpening(WebsiteGenerator):
 					),
 					title=_("Vacancies fulfilled"),
 				)
+
+	def is_opening_being_closed(self):
+		if self.is_new() or self.status != "Closed":
+			return False
+
+		return frappe.db.get_value(self.doctype, self.name, "status") == "Open"
 
 	def update_job_requisition_status(self):
 		if self.status == "Closed" and self.job_requisition:

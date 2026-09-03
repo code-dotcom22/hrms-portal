@@ -7,15 +7,16 @@ app_license = "GNU General Public License (v3)"
 required_apps = ["frappe/erpnext"]
 source_link = "http://github.com/frappe/hrms"
 app_logo_url = "/assets/hrms/images/frappe-hr-logo.svg"
-app_home = "/desk/people"
+app_home = "/desk/hr-dashboard"
 
 add_to_apps_screen = [
 	{
 		"name": "hrms",
 		"logo": "/assets/hrms/images/frappe-hr-logo.svg",
 		"title": "Frappe HR",
-		"route": "/desk/people",
+		"route": app_home,
 		"has_permission": "hrms.hr.utils.check_app_permission",
+		"sequence_id": 2,
 	}
 ]
 
@@ -33,7 +34,8 @@ app_include_css = "hrms.bundle.css"
 
 # include js, css files in header of web template
 # web_include_css = "/assets/hrms/css/hrms.css"
-# web_include_js = "/assets/hrms/js/hrms.js"
+# Drops Frappe's logout ?redirect-to= so login always uses home_page (hr-dashboard)
+web_include_js = ["/assets/hrms/js/login_home.js"]
 
 # include custom scss in every website theme (without file extension ".scss")
 # website_theme_scss = "hrms/public/scss/website"
@@ -70,6 +72,29 @@ doctype_js = {
 # role_home_page = {
 # 	"Role": "home_page"
 # }
+
+# Employees AND HR/admin land on My Dashboard after login; the header Frappe HR
+# chip is how they get into the HR workspace. Three parts, all needed:
+# - get_website_user_home_page: what get_home_page() resolves to for website users
+# - on_login: forces the same answer for desk users, ahead of default workspace/cache
+# - before_request: drops the ?redirect-to= that would otherwise beat home_page
+get_website_user_home_page = "hrms.hr.utils.get_employee_home_page"
+on_login = "hrms.hr.utils.set_hr_dashboard_home_page"
+before_request = ["hrms.hr.utils.drop_desk_login_redirect"]
+
+# ...and a way back to it from anywhere in Desk, since nothing else routes there.
+# Declared as an Action rather than a Route because the settings dropdown spreads
+# navbar items through as-is, without mapping `route` -> `url` the way the help
+# dropdown does, so a Route item would render but never navigate on click.
+standard_navbar_items = [
+	{
+		"item_label": "My Dashboard",
+		"item_type": "Action",
+		"action": "frappe.set_route('/desk/hr-dashboard');",
+		"is_standard": 1,
+		"icon": "layout-dashboard",
+	},
+]
 
 calendars = ["Leave Application"]
 
@@ -209,12 +234,30 @@ doc_events = {
 			"hrms.overrides.employee_master.update_approver_role",
 			"hrms.overrides.employee_master.publish_update",
 		],
-		"after_insert": "hrms.overrides.employee_master.update_job_applicant_and_offer",
+		"after_insert": [
+			"hrms.overrides.employee_master.update_job_applicant_and_offer",
+			"hrms.telemetry.on_milestone_insert",
+		],
 		"on_trash": "hrms.overrides.employee_master.update_employee_transfer",
 		"after_delete": "hrms.overrides.employee_master.publish_update",
 	},
 	"Project": {"validate": "hrms.controllers.employee_boarding_controller.update_employee_boarding_status"},
 	"Task": {"on_update": "hrms.controllers.employee_boarding_controller.update_task"},
+	# ---- Usage telemetry: recurring feature usage (see hrms/telemetry.py) ----
+	"Leave Application": {"on_submit": "hrms.telemetry.on_leave_application_submit"},
+	"Expense Claim": {"on_submit": "hrms.telemetry.on_expense_claim_submit"},
+	"Attendance Request": {"on_submit": "hrms.telemetry.on_attendance_request_submit"},
+	"Shift Request": {"on_submit": "hrms.telemetry.on_shift_request_submit"},
+	"Employee Checkin": {"after_insert": "hrms.telemetry.on_employee_checkin"},
+	# ---- Activation telemetry: post-install setup funnel (first-time milestones) ----
+	"Shift Type": {"after_insert": "hrms.telemetry.on_milestone_insert"},
+	"Leave Type": {"after_insert": "hrms.telemetry.on_milestone_insert"},
+	"Salary Structure": {"after_insert": "hrms.telemetry.on_milestone_insert"},
+	"Job Opening": {"after_insert": "hrms.telemetry.on_milestone_insert"},
+	"Appraisal Cycle": {"after_insert": "hrms.telemetry.on_milestone_insert"},
+	"Employee Onboarding": {"after_insert": "hrms.telemetry.on_milestone_insert"},
+	"Salary Slip": {"on_submit": "hrms.telemetry.on_milestone_submit"},
+	"Payroll Entry": {"on_submit": "hrms.telemetry.on_milestone_submit"},
 }
 
 # Scheduled Tasks
@@ -237,7 +280,9 @@ scheduler_events = {
 		"hrms.controllers.employee_reminders.send_work_anniversary_reminders",
 		"hrms.hr.doctype.daily_work_summary_group.daily_work_summary_group.send_summary",
 		"hrms.hr.doctype.interview.interview.send_daily_feedback_reminder",
+		"hrms.hr.doctype.shift_assignment.shift_assignment.mark_expired_shift_assignments_as_inactive",
 		"hrms.hr.doctype.job_opening.job_opening.close_expired_job_openings",
+		"hrms.telemetry.capture_daily_attendance_pulse",
 	],
 	"daily_long": [
 		"hrms.hr.doctype.leave_ledger_entry.leave_ledger_entry.process_expired_allocation",
@@ -374,3 +419,6 @@ company_data_to_be_ignored = [
 # List of apps whose translatable strings should be excluded from this app's translations.
 ignore_translatable_strings_from = ["frappe", "erpnext"]
 employee_holiday_list = ["hrms.utils.holiday_list.get_holiday_list_for_employee"]
+export_python_type_annotations = True
+require_type_annotated_api_methods = True
+repost_allowed_doctypes = ["Expense Claim"]

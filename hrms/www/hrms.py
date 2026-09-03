@@ -10,6 +10,7 @@ def get_context(context):
 	context = frappe._dict()
 	context.csrf_token = csrf_token
 	context.boot = get_boot()
+	context.site_name = frappe.local.site
 	return context
 
 
@@ -24,6 +25,7 @@ def get_boot():
 	bootinfo = frappe._dict(
 		{
 			"site_name": frappe.local.site,
+			"socketio_port": frappe.conf.get("socketio_port") or 9000,
 			"push_relay_server_url": frappe.conf.get("push_relay_server_url") or "",
 			"default_route": get_default_route(),
 		}

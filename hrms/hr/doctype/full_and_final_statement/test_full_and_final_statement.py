@@ -2,19 +2,24 @@
 # See license.txt
 
 import frappe
-from frappe.utils import add_days, now_datetime, today
+from frappe.tests import IntegrationTestCase
+from frappe.utils import add_days, today
 
+from erpnext.assets.doctype.asset.test_asset import create_asset_data
 from erpnext.setup.doctype.employee.test_employee import make_employee
 from erpnext.stock.doctype.purchase_receipt.test_purchase_receipt import make_purchase_receipt
 
-from hrms.tests.utils import HRMSTestSuite
 
-
-class TestFullandFinalStatement(HRMSTestSuite):
+class TestFullandFinalStatement(IntegrationTestCase):
 	def setUp(self):
+		for dt in ["Full and Final Statement", "Asset", "Asset Movement", "Asset Movement Item"]:
+			frappe.db.delete(dt)
+
 		self.setup_fnf()
 
 	def setup_fnf(self):
+		create_asset_data()
+
 		self.employee = make_employee(
 			"test_fnf@example.com", company="_Test Company", relieving_date=add_days(today(), 30)
 		)
@@ -85,7 +90,7 @@ def create_asset_movement(employee):
 	movement = frappe.new_doc("Asset Movement")
 	movement.company = "_Test Company"
 	movement.purpose = "Issue"
-	movement.transaction_date = now_datetime()
+	movement.transaction_date = today()
 
 	movement.append("assets", {"asset": asset_name, "to_employee": employee})
 

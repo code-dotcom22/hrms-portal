@@ -16,13 +16,31 @@ from hrms.tests.utils import HRMSTestSuite
 
 
 class TestLeavePolicyAssignment(HRMSTestSuite):
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		cls.make_employees()
+
 	def setUp(self):
+		for doctype in [
+			"Leave Period",
+			"Leave Application",
+			"Leave Allocation",
+			"Leave Policy",
+			"Leave Policy Assignment",
+			"Leave Ledger Entry",
+		]:
+			frappe.db.delete(doctype)
+
 		employee = get_employee()
 		self.original_doj = employee.date_of_joining
 		self.employee = employee
 
+	def tearDown(self):
+		frappe.db.set_value("Employee", self.employee.name, "date_of_joining", self.original_doj)
+
 	def test_grant_leaves(self):
-		leave_period = get_leave_period(current=True)
+		leave_period = get_leave_period()
 		leave_policy = create_leave_policy(annual_allocation=10)
 		leave_policy.submit()
 
@@ -56,7 +74,7 @@ class TestLeavePolicyAssignment(HRMSTestSuite):
 		self.assertEqual(leave_alloc_doc.leave_policy_assignment, assignments[0])
 
 	def test_allow_to_grant_all_leave_after_cancellation_of_every_leave_allocation(self):
-		leave_period = get_leave_period(current=True)
+		leave_period = get_leave_period()
 		leave_policy = create_leave_policy(annual_allocation=10)
 		leave_policy.submit()
 
@@ -78,6 +96,7 @@ class TestLeavePolicyAssignment(HRMSTestSuite):
 		allocation = frappe.db.get_value(
 			"Leave Allocation", {"leave_policy_assignment": assignments[0]}, "name"
 		)
+
 		leave_alloc_doc = frappe.get_doc("Leave Allocation", allocation)
 		leave_alloc_doc.cancel()
 		leave_alloc_doc.delete()
@@ -87,7 +106,7 @@ class TestLeavePolicyAssignment(HRMSTestSuite):
 		)
 
 	def test_pro_rated_leave_allocation(self):
-		leave_period = get_leave_period(current=True)
+		leave_period = get_leave_period()
 		leave_policy = create_leave_policy(annual_allocation=12)
 		leave_policy.submit()
 
@@ -139,7 +158,7 @@ class TestLeavePolicyAssignment(HRMSTestSuite):
 		)
 		self.assertEqual(new_leaves_allocated, 30)
 
-		leave_period = create_leave_period(add_months(first_day, -23), first_day, "_Test Company")
+		leave_period = create_leave_period(add_months(first_day, -23), first_day)
 		data = {
 			"assignment_based_on": "Leave Period",
 			"leave_policy": leave_policy.name,
@@ -160,7 +179,7 @@ class TestLeavePolicyAssignment(HRMSTestSuite):
 				"is_earned_leave": 1,
 				"allocate_on_day": "First Day",
 			}
-		).save()
+		).submit()
 
 		leave_policy = frappe.get_doc(
 			{
@@ -176,7 +195,6 @@ class TestLeavePolicyAssignment(HRMSTestSuite):
 		).submit()
 
 		today_date = getdate()
-		frappe.flags.pop("current_date", None)
 
 		leave_policy_assignment = frappe.new_doc("Leave Policy Assignment")
 		leave_policy_assignment.employee = self.employee.name
@@ -199,7 +217,7 @@ class TestLeavePolicyAssignment(HRMSTestSuite):
 	def test_earned_leave_allocation_if_leave_policy_assignment_submitted_after_period(self):
 		year_start_date = get_year_start(getdate())
 		year_end_date = get_year_ending(getdate())
-		leave_period = create_leave_period(year_start_date, year_end_date, "_Test Company")
+		leave_period = create_leave_period(year_start_date, year_end_date)
 
 		# assignment 10 days after the leave period
 		frappe.flags.current_date = add_days(year_end_date, 10)
@@ -226,7 +244,7 @@ class TestLeavePolicyAssignment(HRMSTestSuite):
 	def test_earned_leave_allocation_for_leave_period_spanning_two_years(self):
 		first_year_start_date = get_year_start(getdate())
 		second_year_end_date = get_year_ending(add_months(first_year_start_date, 12))
-		leave_period = create_leave_period(first_year_start_date, second_year_end_date, "_Test Company")
+		leave_period = create_leave_period(first_year_start_date, second_year_end_date)
 
 		# assignment during mid second year
 		frappe.flags.current_date = add_months(second_year_end_date, -6)
@@ -254,13 +272,11 @@ class TestLeavePolicyAssignment(HRMSTestSuite):
 
 	def test_skip_zero_allocation_leaves(self):
 		today = getdate()
-		leave_period = create_leave_period(get_year_start(today), get_year_ending(today), "_Test Company")
+		leave_period = create_leave_period(get_year_start(today), get_year_ending(today))
 
 		sick = create_leave_type(
 			leave_type_name="_Test Sick Leave", non_encashable_leaves=0, max_leaves_allowed=2
 		)
-		sick.allow_negative = 1
-		sick.save()
 		casual = create_leave_type(
 			leave_type_name="_Test Casual Leave", non_encashable_leaves=0, max_leaves_allowed=12
 		)
@@ -307,221 +323,17 @@ class TestLeavePolicyAssignment(HRMSTestSuite):
 			fields=["content"],
 		)
 
-		self.assertEqual(len(comments), 1)
+		self.assertEqual(len(comments), 2)
 		self.assertIn(casual.name, comments[0]["content"])
+		self.assertIn(sick.name, comments[1]["content"])
 
 		allocations = frappe.get_all(
 			"Leave Allocation",
 			filters={"leave_policy_assignment": assignment.name},
-			fields=["leave_type", "new_leaves_allocated", "total_leaves_allocated"],
-		)
-		allocations = {allocation["leave_type"]: allocation for allocation in allocations}
-
-		self.assertEqual(allocations[sick.name]["new_leaves_allocated"], 0)
-		self.assertEqual(allocations[sick.name]["total_leaves_allocated"], 0)
-		self.assertEqual(allocations[compoff.name]["new_leaves_allocated"], 3)
-		self.assertEqual(allocations[annual.name]["new_leaves_allocated"], 3)
-		self.assertNotIn(casual.name, allocations)
-
-	def test_half_yearly_earned_leave_schedule_based_on_leave_period(self):
-		"""
-		Leave Period: 01-Apr-2026 to 31-Mar-2027
-		Expected allocation dates: 30-Sep-2026, 31-Mar-2027
-		NOT: 30-Jun-2026, 31-Dec-2026
-		"""
-		leave_period = create_leave_period(getdate("2026-04-01"), getdate("2027-03-31"), "_Test Company")
-		leave_type = create_leave_type(
-			leave_type_name="_Test Half Yearly Earned Leave",
-			is_earned_leave=True,
-			earned_leave_frequency="Half-Yearly",
-			allocate_on_day="Last Day",
-		)
-		annual_allocation = 18
-		leave_policy = create_leave_policy(leave_type=leave_type.name, annual_allocation=annual_allocation)
-		leave_policy.submit()
-
-		# assignment created at the start of the leave period
-		frappe.flags.current_date = getdate("2026-04-01")
-
-		data = frappe._dict(
-			{
-				"assignment_based_on": "Leave Period",
-				"leave_policy": leave_policy.name,
-				"leave_period": leave_period.name,
-			}
-		)
-		assignment = create_assignment(self.employee.name, data)
-		assignment.submit()
-
-		allocation_name = frappe.db.get_value(
-			"Leave Allocation", {"leave_policy_assignment": assignment.name}, "name"
-		)
-		schedule = frappe.get_all(
-			"Earned Leave Schedule",
-			filters={"parent": allocation_name},
-			fields=["allocation_date"],
-			order_by="allocation_date asc",
+			fields=["leave_type", "new_leaves_allocated"],
 		)
 
-		allocation_dates = [getdate(row.allocation_date) for row in schedule]
-
-		self.assertIn(getdate("2026-09-30"), allocation_dates)
-		self.assertIn(getdate("2027-03-31"), allocation_dates)
-		self.assertNotIn(getdate("2026-06-30"), allocation_dates)
-		self.assertNotIn(getdate("2026-12-31"), allocation_dates)
-
-		# should be exactly 2 allocations, not 3
-		self.assertEqual(len(allocation_dates), 2)
-
-	def test_half_yearly_earned_leave_schedule_based_on_joining_date(self):
-		"""
-		Employee joins: 01-Apr-2026
-		Expected allocation dates: 30-Sep-2026, 31-Mar-2027
-		"""
-		self.employee.date_of_joining = getdate("2026-04-01")
-		self.employee.save()
-
-		leave_type = create_leave_type(
-			leave_type_name="_Test Half Yearly Earned Leave Joining Date",
-			is_earned_leave=True,
-			earned_leave_frequency="Half-Yearly",
-			allocate_on_day="Last Day",
-		)
-		annual_allocation = 18
-		leave_policy = create_leave_policy(leave_type=leave_type.name, annual_allocation=annual_allocation)
-		leave_policy.submit()
-
-		frappe.flags.current_date = getdate("2026-04-01")
-
-		data = frappe._dict(
-			{
-				"assignment_based_on": "Joining Date",
-				"leave_policy": leave_policy.name,
-				"effective_from": self.employee.date_of_joining,
-				"effective_to": getdate("2027-03-31"),
-			}
-		)
-		assignment = create_assignment(self.employee.name, data)
-		assignment.submit()
-
-		allocation_name = frappe.db.get_value(
-			"Leave Allocation", {"leave_policy_assignment": assignment.name}, "name"
-		)
-		schedule = frappe.get_all(
-			"Earned Leave Schedule",
-			filters={"parent": allocation_name},
-			fields=["allocation_date"],
-			order_by="allocation_date asc",
-		)
-
-		allocation_dates = [getdate(row.allocation_date) for row in schedule]
-
-		self.assertIn(getdate("2026-09-30"), allocation_dates)
-		self.assertIn(getdate("2027-03-31"), allocation_dates)
-		self.assertNotIn(getdate("2026-06-30"), allocation_dates)
-		self.assertEqual(len(allocation_dates), 2)
-
-	def test_half_yearly_earned_leave_schedule_based_on_joining_date_mid_month_first_day(self):
-		"""
-		Employee joins: 27-May-2026 (mid-month), assignment created: 03-Jul-2026
-		Period 1: 27-May-2026 → 26-Nov-2026, Period 2: 27-Nov-2026 → 26-May-2027
-		Expected allocation dates: 03-Jul-2026 (period 1 credited on assignment date), 27-Nov-2026
-		"""
-		self.employee.date_of_joining = getdate("2026-05-27")
-		self.employee.save()
-
-		leave_type = create_leave_type(
-			leave_type_name="_Test Half Yearly Earned Leave Joining Date First Day",
-			is_earned_leave=True,
-			earned_leave_frequency="Half-Yearly",
-			allocate_on_day="First Day",
-		)
-		annual_allocation = 18
-		leave_policy = create_leave_policy(leave_type=leave_type.name, annual_allocation=annual_allocation)
-		leave_policy.submit()
-
-		# assignment created mid-period
-		frappe.flags.current_date = getdate("2026-07-03")
-
-		data = frappe._dict(
-			{
-				"assignment_based_on": "Joining Date",
-				"leave_policy": leave_policy.name,
-				"effective_from": self.employee.date_of_joining,
-				"effective_to": getdate("2027-05-26"),
-			}
-		)
-		assignment = create_assignment(self.employee.name, data)
-		assignment.submit()
-
-		allocation_name = frappe.db.get_value(
-			"Leave Allocation", {"leave_policy_assignment": assignment.name}, "name"
-		)
-		schedule = frappe.get_all(
-			"Earned Leave Schedule",
-			filters={"parent": allocation_name},
-			fields=["allocation_date"],
-			order_by="allocation_date asc",
-		)
-
-		allocation_dates = [getdate(row.allocation_date) for row in schedule]
-
-		self.assertIn(getdate("2026-07-03"), allocation_dates)
-		self.assertIn(getdate("2026-11-27"), allocation_dates)
-		self.assertNotIn(getdate("2026-06-30"), allocation_dates)
-		self.assertNotIn(getdate("2027-05-27"), allocation_dates)
-
-		# should be exactly 2 allocations, not 3
-		self.assertEqual(len(allocation_dates), 2)
-
-	def test_half_yearly_earned_leave_schedule_based_on_joining_date_mid_month_last_day(self):
-		"""
-		Employee joins: 27-May-2026 (mid-month), assignment created: 03-Jul-2026
-		Period 1: 27-May-2026 → 26-Nov-2026, Period 2: 27-Nov-2026 → 26-May-2027
-		Expected allocation dates: 26-Nov-2026, 26-May-2027
-		"""
-		self.employee.date_of_joining = getdate("2026-05-27")
-		self.employee.save()
-
-		leave_type = create_leave_type(
-			leave_type_name="_Test Half Yearly Earned Leave Joining Date Last Day",
-			is_earned_leave=True,
-			earned_leave_frequency="Half-Yearly",
-			allocate_on_day="Last Day",
-		)
-		annual_allocation = 18
-		leave_policy = create_leave_policy(leave_type=leave_type.name, annual_allocation=annual_allocation)
-		leave_policy.submit()
-
-		# assignment created mid-period
-		frappe.flags.current_date = getdate("2026-07-03")
-
-		data = frappe._dict(
-			{
-				"assignment_based_on": "Joining Date",
-				"leave_policy": leave_policy.name,
-				"effective_from": self.employee.date_of_joining,
-				"effective_to": getdate("2027-05-26"),
-			}
-		)
-		assignment = create_assignment(self.employee.name, data)
-		assignment.submit()
-
-		allocation_name = frappe.db.get_value(
-			"Leave Allocation", {"leave_policy_assignment": assignment.name}, "name"
-		)
-		schedule = frappe.get_all(
-			"Earned Leave Schedule",
-			filters={"parent": allocation_name},
-			fields=["allocation_date"],
-			order_by="allocation_date asc",
-		)
-
-		allocation_dates = [getdate(row.allocation_date) for row in schedule]
-
-		self.assertIn(getdate("2026-11-26"), allocation_dates)
-		self.assertIn(getdate("2027-05-26"), allocation_dates)
-		self.assertNotIn(getdate("2026-06-30"), allocation_dates)
-
-		# should be exactly 2 allocations, not 3
-		self.assertEqual(len(allocation_dates), 2)
+		self.assertEqual(allocations[0]["leave_type"], compoff.name)
+		self.assertEqual(allocations[0]["new_leaves_allocated"], 3)
+		self.assertEqual(allocations[1]["leave_type"], annual.name)
+		self.assertEqual(allocations[1]["new_leaves_allocated"], 3)

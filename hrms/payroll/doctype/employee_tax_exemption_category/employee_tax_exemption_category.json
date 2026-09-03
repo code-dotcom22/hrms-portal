@@ -9,8 +9,7 @@
  "engine": "InnoDB",
  "field_order": [
   "max_amount",
-  "is_active",
-  "description"
+  "is_active"
  ],
  "fields": [
   {
@@ -24,15 +23,10 @@
    "fieldname": "is_active",
    "fieldtype": "Check",
    "label": "Is Active"
-  },
-  {
-   "fieldname": "description",
-   "fieldtype": "Small Text",
-   "label": "Description"
   }
  ],
  "links": [],
- "modified": "2026-05-27 00:00:00.000000",
+ "modified": "2024-03-27 13:09:41.659098",
  "modified_by": "Administrator",
  "module": "Payroll",
  "name": "Employee Tax Exemption Category",

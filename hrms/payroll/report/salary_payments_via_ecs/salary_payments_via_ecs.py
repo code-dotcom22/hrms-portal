@@ -4,8 +4,6 @@
 
 import frappe
 from frappe import _
-from frappe.query_builder import DocType
-from frappe.query_builder.functions import Extract
 
 import erpnext
 
@@ -67,26 +65,28 @@ def get_columns(filters):
 
 
 def get_conditions(filters):
-	SalarySlip = DocType("Salary Slip")
-	filter_clauses = []
+	conditions = [""]
 
 	if filters.get("department"):
-		filter_clauses.append(SalarySlip.department == filters["department"])
-	if filters.get("branch"):
-		filter_clauses.append(SalarySlip.branch == filters["branch"])
-	if filters.get("company"):
-		filter_clauses.append(SalarySlip.company == filters["company"])
-	if filters.get("month"):
-		filter_clauses.append(Extract("month", SalarySlip.start_date) == int(filters["month"]))
-	if filters.get("year"):
-		filter_clauses.append(Extract("year", SalarySlip.start_date) == int(filters["year"]))
+		conditions.append("department = '%s' " % (filters["department"]))
 
-	return filter_clauses
+	if filters.get("branch"):
+		conditions.append("branch = '%s' " % (filters["branch"]))
+
+	if filters.get("company"):
+		conditions.append("company = '%s' " % (filters["company"]))
+
+	if filters.get("month"):
+		conditions.append("month(start_date) = '%s' " % (filters["month"]))
+
+	if filters.get("year"):
+		conditions.append("year(start_date) = '%s' " % (filters["year"]))
+
+	return " and ".join(conditions)
 
 
 def get_data(filters):
-	SalarySlip = DocType("Salary Slip")
-	filter_clauses = get_conditions(filters)
+	data = []
 
 	fields = ["employee", "branch", "bank_name", "bank_ac_no", "salary_mode"]
 	if erpnext.get_region() == "India":
@@ -108,18 +108,15 @@ def get_data(filters):
 			},
 		)
 
-	base_where = SalarySlip.docstatus == 1
-	for clause in filter_clauses:
-		base_where = base_where & clause
+	conditions = get_conditions(filters)
 
-	entry = (
-		frappe.qb.from_(SalarySlip)
-		.select(SalarySlip.employee, SalarySlip.employee_name, SalarySlip.gross_pay, SalarySlip.net_pay)
-		.where(base_where)
-		.run(as_dict=True)
+	entry = frappe.db.sql(
+		""" select employee, employee_name, gross_pay, net_pay
+		from `tabSalary Slip`
+		where docstatus = 1 %s """
+		% (conditions),
+		as_dict=1,
 	)
-
-	data = []
 
 	for d in entry:
 		employee = {

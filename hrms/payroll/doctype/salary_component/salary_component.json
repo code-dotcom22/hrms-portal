@@ -69,7 +69,7 @@
    "fieldtype": "Select",
    "in_standard_filter": 1,
    "label": "Type",
-   "options": "Earning\nDeduction\nEmployer Contribution",
+   "options": "Earning\nDeduction",
    "reqd": 1
   },
   {
@@ -89,7 +89,6 @@
   },
   {
    "default": "0",
-   "depends_on": "eval:doc.type != \"Employer Contribution\"",
    "fieldname": "do_not_include_in_total",
    "fieldtype": "Check",
    "label": "Do Not Include in Total"
@@ -119,7 +118,6 @@
   },
   {
    "default": "0",
-   "depends_on": "eval:doc.type != \"Employer Contribution\"",
    "description": "If enabled, the value specified or calculated in this component will not contribute to the earnings or deductions. However, it's value can be referenced by other components that can be added or deducted. ",
    "fieldname": "statistical_component",
    "fieldtype": "Check",
@@ -127,7 +125,6 @@
   },
   {
    "default": "0",
-   "depends_on": "eval:doc.type != \"Employer Contribution\"",
    "fieldname": "is_flexible_benefit",
    "fieldtype": "Check",
    "label": "Is Flexible Benefit"
@@ -153,7 +150,7 @@
    "search_index": 1
   },
   {
-   "depends_on": "eval:doc.statistical_component != 1 && doc.type != \"Employer Contribution\"",
+   "depends_on": "eval:doc.statistical_component != 1",
    "fieldname": "section_break_5",
    "fieldtype": "Section Break",
    "label": "Accounts"
@@ -244,7 +241,7 @@
   },
   {
    "default": "1",
-   "depends_on": "eval:!doc.statistical_component && doc.type != \"Employer Contribution\"",
+   "depends_on": "eval:!doc.statistical_component",
    "description": "If enabled, the component will not be displayed in the salary slip if the amount is zero",
    "fieldname": "remove_if_zero_valued",
    "fieldtype": "Check",
@@ -260,7 +257,6 @@
   },
   {
    "default": "0",
-   "depends_on": "eval:doc.type != \"Employer Contribution\"",
    "description": "If enabled, this component will be included in arrear calculations",
    "fieldname": "arrear_component",
    "fieldtype": "Check",
@@ -295,7 +291,7 @@
  "icon": "fa fa-flag",
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-06-08 17:39:39.847210",
+ "modified": "2025-09-23 11:28:17.375819",
  "modified_by": "Administrator",
  "module": "Payroll",
  "name": "Salary Component",
@@ -304,6 +300,7 @@
  "permissions": [
   {
    "create": 1,
+   "delete": 1,
    "email": 1,
    "export": 1,
    "print": 1,
@@ -316,18 +313,6 @@
   {
    "read": 1,
    "role": "Employee"
-  },
-  {
-   "create": 1,
-   "delete": 1,
-   "email": 1,
-   "export": 1,
-   "print": 1,
-   "read": 1,
-   "report": 1,
-   "role": "HR Manager",
-   "share": 1,
-   "write": 1
   }
  ],
  "row_format": "Dynamic",

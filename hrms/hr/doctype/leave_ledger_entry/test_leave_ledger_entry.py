@@ -11,6 +11,12 @@ from hrms.tests.utils import HRMSTestSuite
 
 
 class TestLeaveLedgerEntry(HRMSTestSuite):
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		cls.make_employees()
+		cls.make_leave_types()
+
 	def setUp(self):
 		emp_id = make_employee("test_leave_allocation@salary.com", company="_Test Company")
 		self.employee = frappe.get_doc("Employee", emp_id)
@@ -36,3 +42,6 @@ class TestLeaveLedgerEntry(HRMSTestSuite):
 		allocation.reload()
 
 		self.assertEqual(allocation.expired, 1)
+
+	def tearDown(self):
+		frappe.db.rollback()

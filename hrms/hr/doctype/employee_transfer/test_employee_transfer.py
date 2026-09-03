@@ -2,19 +2,21 @@
 # See license.txt
 
 import frappe
+from frappe.tests import IntegrationTestCase, change_settings
 from frappe.utils import add_days, getdate
 
 from erpnext.setup.doctype.employee.test_employee import make_employee
 
-from hrms.tests.utils import HRMSTestSuite
 
-
-class TestEmployeeTransfer(HRMSTestSuite):
+class TestEmployeeTransfer(IntegrationTestCase):
 	def setUp(self):
 		create_company()
 
+	def tearDown(self):
+		frappe.db.rollback()
+
 	def test_submit_before_transfer_date(self):
-		make_employee("employee2@transfers.com", company="Test Company")
+		make_employee("employee2@transfers.com")
 
 		transfer_obj = frappe.get_doc(
 			{
@@ -39,7 +41,7 @@ class TestEmployeeTransfer(HRMSTestSuite):
 		self.assertEqual(transfer.docstatus, 1)
 
 	def test_new_employee_creation(self):
-		make_employee("employee3@transfers.com", company="Test Company")
+		make_employee("employee3@transfers.com")
 
 		transfer = frappe.get_doc(
 			{
@@ -96,7 +98,7 @@ class TestEmployeeTransfer(HRMSTestSuite):
 			self.assertEqual(data.from_date, dt[0])
 			self.assertEqual(data.to_date, None)
 
-	@HRMSTestSuite.change_settings("System Settings", {"number_format": "#.###,##"})
+	@change_settings("System Settings", {"number_format": "#.###,##"})
 	def test_data_formatting_in_history(self):
 		from hrms.hr.utils import get_formatted_value
 

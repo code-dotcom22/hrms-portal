@@ -2,6 +2,7 @@
 # See license.txt
 
 import frappe
+from frappe.tests import IntegrationTestCase
 from frappe.utils import add_days, flt, getdate
 
 from hrms.hr.doctype.interview.test_interview import (
@@ -9,17 +10,16 @@ from hrms.hr.doctype.interview.test_interview import (
 	create_skill_set,
 )
 from hrms.tests.test_utils import create_job_applicant
-from hrms.tests.utils import HRMSTestSuite
 
 
-class TestInterviewFeedback(HRMSTestSuite):
+class TestInterviewFeedback(IntegrationTestCase):
 	def test_validation_for_skill_set(self):
 		frappe.set_user("Administrator")
 		job_applicant = create_job_applicant()
 		interview = create_interview_and_dependencies(
 			job_applicant.name, scheduled_on=add_days(getdate(), -1)
 		)
-		skill_ratings = get_skills_rating(interview.interview_type)
+		skill_ratings = get_skills_rating(interview.interview_round)
 
 		interviewer = "test_interviewer1@example.com"
 		create_skill_set(["Leadership"])
@@ -37,7 +37,7 @@ class TestInterviewFeedback(HRMSTestSuite):
 		interview = create_interview_and_dependencies(
 			job_applicant.name, scheduled_on=add_days(getdate(), -1)
 		)
-		skill_ratings = get_skills_rating(interview.interview_type)
+		skill_ratings = get_skills_rating(interview.interview_round)
 
 		# For First Interviewer Feedback
 		interviewer = "test_interviewer1@example.com"
@@ -69,6 +69,9 @@ class TestInterviewFeedback(HRMSTestSuite):
 
 		frappe.set_user("Administrator")
 
+	def tearDown(self):
+		frappe.db.rollback()
+
 
 def create_interview_feedback(interview, interviewer, skills_ratings):
 	interview_feedback = frappe.new_doc("Interview Feedback")
@@ -85,10 +88,10 @@ def create_interview_feedback(interview, interviewer, skills_ratings):
 	return interview_feedback
 
 
-def get_skills_rating(interview_type):
+def get_skills_rating(interview_round):
 	import random
 
-	skills = frappe.get_all("Expected Skill Set", filters={"parent": interview_type}, fields=["skill"])
+	skills = frappe.get_all("Expected Skill Set", filters={"parent": interview_round}, fields=["skill"])
 	for d in skills:
 		d["rating"] = random.random()
 	return skills

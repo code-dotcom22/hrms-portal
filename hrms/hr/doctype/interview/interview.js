@@ -16,7 +16,6 @@ frappe.ui.form.on("Interview", {
 		});
 
 		frm.trigger("add_custom_buttons");
-		if (frm.doc.__islocal) return;
 
 		frappe.run_serially([
 			() => frm.trigger("load_skills_average_rating"),
@@ -73,7 +72,7 @@ frappe.ui.form.on("Interview", {
 		frappe.call({
 			method: "hrms.hr.doctype.interview.interview.get_expected_skill_set",
 			args: {
-				interview_type: frm.doc.interview_type,
+				interview_round: frm.doc.interview_round,
 			},
 			callback: function (r) {
 				frm.events.show_feedback_dialog(frm, r.message);
@@ -199,15 +198,15 @@ frappe.ui.form.on("Interview", {
 		});
 	},
 
-	interview_type: function (frm) {
+	interview_round: function (frm) {
 		frm.set_value("job_applicant", "");
 		frm.trigger("set_applicable_interviewers");
 	},
 
 	job_applicant: function (frm) {
-		if (!frm.doc.interview_type) {
+		if (!frm.doc.interview_round) {
 			frm.set_value("job_applicant", "");
-			frappe.throw(__("Select Interview Type First"));
+			frappe.throw(__("Select Interview Round First"));
 		}
 
 		if (frm.doc.job_applicant && !frm.doc.designation) {
@@ -219,7 +218,7 @@ frappe.ui.form.on("Interview", {
 		frappe.call({
 			method: "hrms.hr.doctype.interview.interview.get_interviewers",
 			args: {
-				interview_type: frm.doc.interview_type || "",
+				interview_round: frm.doc.interview_round || "",
 			},
 			callback: function (r) {
 				frm.clear_table("interview_details");

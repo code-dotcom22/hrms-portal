@@ -1,6 +1,6 @@
 # Copyright (c) 2015, Frappe Technologies Pvt. Ltd. and Contributors
 # License: GNU General Public License v3. See license.txt
-import datetime
+
 
 import frappe
 from frappe import _
@@ -38,40 +38,6 @@ class ValueMultiplierError(frappe.ValidationError):
 
 
 class LeaveAllocation(Document):
-	# begin: auto-generated types
-	# This code is auto-generated. Do not modify anything in this block.
-
-	from typing import TYPE_CHECKING
-
-	if TYPE_CHECKING:
-		from frappe.types import DF
-
-		from hrms.hr.doctype.earned_leave_schedule.earned_leave_schedule import EarnedLeaveSchedule
-
-		amended_from: DF.Link | None
-		carry_forward: DF.Check
-		carry_forwarded_leaves_count: DF.Float
-		company: DF.Link
-		compensatory_request: DF.Link | None
-		department: DF.Link | None
-		description: DF.SmallText | None
-		earned_leave_schedule: DF.Table[EarnedLeaveSchedule]
-		employee: DF.Link
-		employee_name: DF.Data | None
-		expired: DF.Check
-		from_date: DF.Date
-		leave_period: DF.Link | None
-		leave_policy: DF.Link | None
-		leave_policy_assignment: DF.Link | None
-		leave_type: DF.Link
-		naming_series: DF.Literal["HR-LAL-.YYYY.-"]
-		new_leaves_allocated: DF.Float
-		to_date: DF.Date
-		total_leaves_allocated: DF.Float
-		total_leaves_encashed: DF.Float
-		unused_leaves: DF.Float
-	# end: auto-generated types
-
 	def validate(self):
 		self.validate_period()
 		self.validate_allocation_overlap()
@@ -220,19 +186,17 @@ class LeaveAllocation(Document):
 			)
 
 	def validate_allocation_overlap(self):
-		LeaveAllocation = frappe.qb.DocType("Leave Allocation")
-		leave_allocation = (
-			frappe.qb.from_(LeaveAllocation)
-			.select(LeaveAllocation.name)
-			.where(
-				(LeaveAllocation.employee == self.employee)
-				& (LeaveAllocation.leave_type == self.leave_type)
-				& (LeaveAllocation.name != self.name)
-				& (LeaveAllocation.docstatus == 1)
-				& (LeaveAllocation.to_date >= self.from_date)
-				& (LeaveAllocation.from_date <= self.to_date)
-			)
-		).run()
+		leave_allocation = frappe.db.sql(
+			"""
+			SELECT
+				name
+			FROM `tabLeave Allocation`
+			WHERE
+				employee=%s AND leave_type=%s
+				AND name <> %s AND docstatus=1
+				AND to_date >= %s AND from_date <= %s""",
+			(self.employee, self.leave_type, self.name, self.from_date, self.to_date),
+		)
 
 		if leave_allocation:
 			frappe.msgprint(
@@ -285,7 +249,6 @@ class LeaveAllocation(Document):
 			not self.total_leaves_allocated
 			and not frappe.db.get_value("Leave Type", self.leave_type, "is_earned_leave")
 			and not frappe.db.get_value("Leave Type", self.leave_type, "is_compensatory")
-			and not frappe.db.get_value("Leave Type", self.leave_type, "allow_negative")
 		):
 			frappe.throw(_("Total leaves allocated is mandatory for Leave Type {0}").format(self.leave_type))
 
@@ -354,8 +317,7 @@ class LeaveAllocation(Document):
 		create_leave_ledger_entry(self, args, submit)
 
 	@frappe.whitelist()
-	def allocate_leaves_manually(self, new_leaves: str | float, from_date: str | datetime.date | None = None):
-		self.check_permission("write")
+	def allocate_leaves_manually(self, new_leaves, from_date=None):
 		if from_date and not (getdate(self.from_date) <= getdate(from_date) <= getdate(self.to_date)):
 			frappe.throw(
 				_("Cannot allocate leaves outside the allocation period {0} - {1}").format(
@@ -434,13 +396,7 @@ class LeaveAllocation(Document):
 		return _get_monthly_earned_leave(doj, annual_allocation, frequency, rounding)
 
 	@frappe.whitelist()
-	def create_leave_adjustment(
-		self,
-		adjustment_type: str,
-		leaves_to_adjust: str | float,
-		posting_date: str | datetime.date,
-		reason_for_adjustment: str | None = None,
-	) -> None:
+	def create_leave_adjustment(self, adjustment_type, leaves_to_adjust, posting_date, reason_for_adjustment):
 		leave_adjustment = frappe.new_doc(
 			"Leave Adjustment",
 			employee=self.employee,
@@ -456,7 +412,7 @@ class LeaveAllocation(Document):
 		frappe.msgprint(_("Adjustment Created Successfully"), indicator="green", alert=True)
 
 	@frappe.whitelist()
-	def retry_failed_allocations(self, failed_allocations: list) -> None:
+	def retry_failed_allocations(self, failed_allocations):
 		if not frappe.has_permission(doctype="Leave Allocation", ptype="write", user=frappe.session.user):
 			frappe.throw(_("You do not have permission to complete this action"), frappe.PermissionError)
 

@@ -2,6 +2,7 @@
 # See license.txt
 
 import frappe
+from frappe.tests import IntegrationTestCase
 from frappe.utils import add_years, cstr, date_diff, get_first_day, nowdate
 from frappe.utils.make_random import get_random
 
@@ -20,16 +21,43 @@ from hrms.payroll.doctype.salary_slip.test_salary_slip import (
 )
 from hrms.payroll.doctype.salary_structure.salary_structure import make_salary_slip
 from hrms.tests.test_utils import create_employee_grade
-from hrms.tests.utils import HRMSTestSuite
+
+test_dependencies = ["Fiscal Year"]
 
 
-class TestSalaryStructure(HRMSTestSuite):
-	def test_salary_structure_deduction_based_on_gross_pay(self):
-		emp = make_employee("test_employee_3@salary.com", company="_Test Company")
+class TestSalaryStructure(IntegrationTestCase):
+	def setUp(self):
+		for dt in ["Salary Slip", "Salary Structure", "Salary Structure Assignment"]:
+			frappe.db.sql("delete from `tab%s`" % dt)
 
-		sal_struct = make_salary_structure(
-			"Salary Structure 2", "Monthly", dont_submit=True, company="_Test Company"
+		self.make_holiday_list()
+		frappe.db.set_value(
+			"Company",
+			erpnext.get_default_company(),
+			"default_holiday_list",
+			"Salary Structure Test Holiday List",
 		)
+		make_employee("test_employee@salary.com")
+		make_employee("test_employee_2@salary.com")
+
+	def make_holiday_list(self):
+		if not frappe.db.get_value("Holiday List", "Salary Structure Test Holiday List"):
+			holiday_list = frappe.get_doc(
+				{
+					"doctype": "Holiday List",
+					"holiday_list_name": "Salary Structure Test Holiday List",
+					"from_date": nowdate(),
+					"to_date": add_years(nowdate(), 1),
+					"weekly_off": "Sunday",
+				}
+			).insert()
+			holiday_list.get_weekly_off_dates()
+			holiday_list.save()
+
+	def test_salary_structure_deduction_based_on_gross_pay(self):
+		emp = make_employee("test_employee_3@salary.com")
+
+		sal_struct = make_salary_structure("Salary Structure 2", "Monthly", dont_submit=True)
 
 		sal_struct.earnings = [sal_struct.earnings[0]]
 		sal_struct.earnings[0].amount_based_on_formula = 1
@@ -50,7 +78,7 @@ class TestSalaryStructure(HRMSTestSuite):
 
 	def test_amount_totals(self):
 		frappe.db.set_single_value("Payroll Settings", "include_holidays_in_total_working_days", 0)
-		emp_id = make_employee("test_employee_2@salary.com", company="_Test Company")
+		emp_id = make_employee("test_employee_2@salary.com")
 		salary_slip = frappe.get_value("Salary Slip", {"employee": emp_id})
 
 		if not salary_slip:
@@ -68,9 +96,7 @@ class TestSalaryStructure(HRMSTestSuite):
 			row.formula = "\n%s\n\n" % row.formula
 			row.condition = "\n%s\n\n" % row.condition
 
-		salary_structure = make_salary_structure(
-			"Salary Structure Sample", "Monthly", dont_submit=True, company="_Test Company"
-		)
+		salary_structure = make_salary_structure("Salary Structure Sample", "Monthly", dont_submit=True)
 		for table in ("earnings", "deductions"):
 			for row in salary_structure.get(table):
 				add_whitespaces(row)
@@ -85,12 +111,12 @@ class TestSalaryStructure(HRMSTestSuite):
 			self.assertFalse("\n" in cstr(row.formula) or "\n" in cstr(row.condition))
 
 	def test_salary_structures_assignment(self):
-		company_currency = "INR"
+		company_currency = erpnext.get_default_currency()
 		salary_structure = make_salary_structure(
-			"Salary Structure Sample", "Monthly", currency=company_currency, company="_Test Company"
+			"Salary Structure Sample", "Monthly", currency=company_currency
 		)
 		employee = "test_assign_structure@salary.com"
-		employee_doc_name = make_employee(employee, company="_Test Company")
+		employee_doc_name = make_employee(employee)
 		# clear the already assigned structures
 		frappe.db.sql(
 			"""delete from `tabSalary Structure Assignment` where employee=%s and salary_structure=%s """,
@@ -125,10 +151,8 @@ class TestSalaryStructure(HRMSTestSuite):
 		self.assertEqual(base, 50000)
 
 	def test_multi_currency_salary_structure(self):
-		make_employee("test_muti_currency_employee@salary.com", company="_Test Company")
-		sal_struct = make_salary_structure(
-			"Salary Structure Multi Currency", "Monthly", currency="USD", company="_Test Company"
-		)
+		make_employee("test_muti_currency_employee@salary.com")
+		sal_struct = make_salary_structure("Salary Structure Multi Currency", "Monthly", currency="USD")
 		self.assertEqual(sal_struct.currency, "USD")
 
 
@@ -148,11 +172,9 @@ def make_salary_structure(
 	test_accrual_component=False,
 	test_arrear=False,
 	test_salary_structure_arrear=False,
-	earnings=None,
-	deductions=None,
 ):
 	if not currency:
-		currency = "INR"
+		currency = erpnext.get_default_currency()
 
 	if frappe.db.exists("Salary Structure", salary_structure):
 		frappe.db.delete("Salary Structure", salary_structure)
@@ -168,19 +190,15 @@ def make_salary_structure(
 	details = {
 		"doctype": "Salary Structure",
 		"name": salary_structure,
-		"company": company or "_Test Company",
-		"earnings": earnings
-		if earnings is not None
-		else make_earning_salary_component(
+		"company": company or erpnext.get_default_company(),
+		"earnings": make_earning_salary_component(
 			setup=True,
 			test_tax=test_tax,
 			company_list=["_Test Company"],
 			test_accrual_component=test_accrual_component,
 			test_arrear=test_arrear,
 		),
-		"deductions": deductions
-		if deductions is not None
-		else make_deduction_salary_component(
+		"deductions": make_deduction_salary_component(
 			setup=True,
 			test_tax=test_tax,
 			company_list=["_Test Company"],
@@ -237,7 +255,7 @@ def create_salary_structure_assignment(
 	leave_encashment_amount_per_day=None,
 ):
 	if not currency:
-		currency = "INR"
+		currency = erpnext.get_default_currency()
 
 	if not allow_duplicate and frappe.db.exists("Salary Structure Assignment", {"employee": employee}):
 		frappe.db.sql("""delete from `tabSalary Structure Assignment` where employee=%s""", (employee))
@@ -269,7 +287,7 @@ def create_salary_structure_assignment(
 	salary_structure_assignment.salary_structure = salary_structure
 	salary_structure_assignment.currency = currency
 	salary_structure_assignment.payroll_payable_account = get_payable_account(company)
-	salary_structure_assignment.company = company or "_Test Company"
+	salary_structure_assignment.company = company or erpnext.get_default_company()
 	salary_structure_assignment.income_tax_slab = income_tax_slab
 	if leave_encashment_amount_per_day:
 		salary_structure_assignment.leave_encashment_amount_per_day = leave_encashment_amount_per_day
@@ -282,5 +300,5 @@ def create_salary_structure_assignment(
 
 def get_payable_account(company=None):
 	if not company:
-		company = "_Test Company"
+		company = erpnext.get_default_company()
 	return frappe.db.get_value("Company", company, "default_payroll_payable_account")

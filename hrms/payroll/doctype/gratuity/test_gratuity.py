@@ -2,6 +2,7 @@
 # See license.txt
 
 import frappe
+from frappe.tests import IntegrationTestCase, change_settings
 from frappe.utils import add_days, add_months, floor, flt, get_datetime, get_first_day, getdate
 
 from erpnext.setup.doctype.employee.test_employee import make_employee
@@ -16,10 +17,11 @@ from hrms.payroll.doctype.salary_slip.test_salary_slip import (
 	make_holiday_list,
 )
 from hrms.payroll.doctype.salary_structure.salary_structure import make_salary_slip
-from hrms.tests.utils import HRMSTestSuite
+
+test_dependencies = ["Salary Component", "Salary Slip", "Account"]
 
 
-class TestGratuity(HRMSTestSuite):
+class TestGratuity(IntegrationTestCase):
 	def setUp(self):
 		for dt in ["Gratuity", "Salary Slip", "Additional Salary"]:
 			frappe.db.delete(dt)
@@ -163,7 +165,7 @@ class TestGratuity(HRMSTestSuite):
 		self.assertEqual(gratuity.status, "Unpaid")
 		self.assertEqual(gratuity.paid_amount, 0)
 
-	@HRMSTestSuite.change_settings(
+	@change_settings(
 		"Payroll Settings",
 		{
 			"payroll_based_on": "Attendance",

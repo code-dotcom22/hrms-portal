@@ -3,18 +3,15 @@
 import calendar
 
 import frappe
+from frappe.tests import IntegrationTestCase
 from frappe.utils import add_days, flt
 
 from erpnext.setup.doctype.employee.test_employee import make_employee
 
-from hrms.payroll.doctype.salary_slip.test_salary_slip import (
-	make_payroll_period,
-)
 from hrms.payroll.doctype.salary_structure.salary_structure import make_salary_slip
-from hrms.tests.utils import HRMSTestSuite
 
 
-class TestPayrollCorrection(HRMSTestSuite):
+class TestPayrollCorrection(IntegrationTestCase):
 	def test_payroll_correction(self):
 		from hrms.payroll.doctype.salary_structure.test_salary_structure import make_salary_structure
 		# test payroll correction, ensure additional salary and employee benefit ledger entries are created\
@@ -26,7 +23,6 @@ class TestPayrollCorrection(HRMSTestSuite):
 			company="_Test Company",
 			date_of_joining="2021-01-01",
 		)
-		make_payroll_period(company="_Test Company")
 		payroll_period = frappe.get_last_doc("Payroll Period", filters={"company": "_Test Company"})
 		salary_structure_doc = make_salary_structure(
 			"Test Payroll Correction",

@@ -6,8 +6,15 @@ from frappe.utils import getdate
 
 from hrms.tests.utils import HRMSTestSuite
 
+test_dependencies = ["Employee Onboarding"]
+
 
 class TestEmployeeSeparation(HRMSTestSuite):
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		cls.make_employees()
+
 	def test_employee_separation(self):
 		separation = create_employee_separation()
 
@@ -24,6 +31,13 @@ class TestEmployeeSeparation(HRMSTestSuite):
 
 		separation.cancel()
 		self.assertEqual(separation.project, "")
+
+	def tearDown(self):
+		for entry in frappe.get_all("Employee Separation"):
+			doc = frappe.get_doc("Employee Separation", entry.name)
+			if doc.docstatus == 1:
+				doc.cancel()
+			doc.delete()
 
 
 def create_employee_separation():

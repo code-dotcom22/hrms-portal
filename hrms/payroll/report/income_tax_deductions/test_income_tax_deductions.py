@@ -1,4 +1,5 @@
 import frappe
+from frappe.tests import IntegrationTestCase
 from frappe.utils import getdate
 
 from erpnext.setup.doctype.employee.test_employee import make_employee
@@ -11,35 +12,42 @@ from hrms.payroll.doctype.salary_slip.test_salary_slip import (
 )
 from hrms.payroll.doctype.salary_structure.test_salary_structure import make_salary_structure
 from hrms.payroll.report.income_tax_deductions.income_tax_deductions import execute
-from hrms.tests.utils import HRMSTestSuite
 
 
-class TestIncomeTaxDeductions(HRMSTestSuite):
-	def setUp(self):
-		self.create_records()
+class TestIncomeTaxDeductions(IntegrationTestCase):
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		frappe.db.delete("Payroll Period")
+		frappe.db.delete("Salary Slip")
 
-	def create_records(self):
-		self.employee = make_employee(
+		cls.create_records()
+
+	@classmethod
+	def tearDownClass(cls):
+		frappe.db.rollback()
+
+	@classmethod
+	def create_records(cls):
+		cls.employee = make_employee(
 			"test_tax_deductions@example.com",
 			company="_Test Company",
 			date_of_joining=getdate("01-10-2021"),
 		)
 
-		self.payroll_period = create_payroll_period(name="_Test Payroll Period 1", company="_Test Company")
+		cls.payroll_period = create_payroll_period(name="_Test Payroll Period 1", company="_Test Company")
 		frappe.db.set_single_value("Payroll Settings", "consider_unmarked_attendance_as", "Present")
 		salary_structure = make_salary_structure(
 			"Monthly Salary Structure Test Income Tax Deduction",
 			"Monthly",
-			employee=self.employee,
+			employee=cls.employee,
 			company="_Test Company",
 			currency="INR",
-			payroll_period=self.payroll_period,
+			payroll_period=cls.payroll_period,
 			test_tax=True,
 		)
 
-		create_salary_slips_for_payroll_period(
-			self.employee, salary_structure.name, self.payroll_period, num=1
-		)
+		create_salary_slips_for_payroll_period(cls.employee, salary_structure.name, cls.payroll_period, num=1)
 
 	def test_report(self):
 		filters = frappe._dict({"company": "_Test Company"})

@@ -9,7 +9,7 @@ country_info = {}
 
 
 @frappe.whitelist(allow_guest=True)
-def get_country(fields: list | None = None) -> dict:
+def get_country(fields=None):
 	global country_info
 	ip = frappe.local.request_ip
 

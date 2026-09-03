@@ -1,7 +1,6 @@
 # Copyright (c) 2018, Frappe Technologies Pvt. Ltd. and contributors
 # For license information, please see license.txt
 
-import datetime
 
 import frappe
 from frappe import _
@@ -19,25 +18,6 @@ class ParentCompanyError(frappe.ValidationError):
 
 
 class StaffingPlan(Document):
-	# begin: auto-generated types
-	# This code is auto-generated. Do not modify anything in this block.
-
-	from typing import TYPE_CHECKING
-
-	if TYPE_CHECKING:
-		from frappe.types import DF
-
-		from hrms.hr.doctype.staffing_plan_detail.staffing_plan_detail import StaffingPlanDetail
-
-		amended_from: DF.Link | None
-		company: DF.Link
-		department: DF.Link | None
-		from_date: DF.Date
-		staffing_details: DF.Table[StaffingPlanDetail]
-		to_date: DF.Date
-		total_estimated_budget: DF.Currency
-	# end: auto-generated types
-
 	def validate(self):
 		self.validate_period()
 		self.validate_details()
@@ -190,7 +170,7 @@ class StaffingPlan(Document):
 			)
 
 	@frappe.whitelist()
-	def set_job_requisitions(self, job_reqs: list[str]) -> Document:
+	def set_job_requisitions(self, job_reqs):
 		if job_reqs:
 			requisitions = frappe.db.get_list(
 				"Job Requisition",
@@ -215,7 +195,7 @@ class StaffingPlan(Document):
 
 
 @frappe.whitelist()
-def get_designation_counts(designation: str, company: str, job_opening: str | None = None) -> dict | bool:
+def get_designation_counts(designation, company, job_opening=None):
 	if not designation:
 		return False
 
@@ -236,14 +216,7 @@ def get_designation_counts(designation: str, company: str, job_opening: str | No
 
 
 @frappe.whitelist()
-def get_active_staffing_plan_details(
-	company: str,
-	designation: str,
-	from_date: str | datetime.date | None = None,
-	to_date: str | datetime.date | None = None,
-) -> list[dict] | None:
-	frappe.has_permission("Staffing Plan", "read", throw=True)
-
+def get_active_staffing_plan_details(company, designation, from_date=None, to_date=None):
 	if from_date is None:
 		from_date = getdate(nowdate())
 	if to_date is None:

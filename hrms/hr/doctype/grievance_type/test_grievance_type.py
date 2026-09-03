@@ -2,8 +2,8 @@
 # See license.txt
 
 # import frappe
-from hrms.tests.utils import HRMSTestSuite
+from frappe.tests import IntegrationTestCase
 
 
-class TestGrievanceType(HRMSTestSuite):
+class TestGrievanceType(IntegrationTestCase):
 	pass

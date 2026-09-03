@@ -4,7 +4,6 @@
 
 import frappe
 from frappe import _
-from frappe.query_builder import DocType
 
 import erpnext
 
@@ -44,13 +43,10 @@ def get_columns(filters, mode_of_payments):
 
 
 def get_payment_modes():
-	SalarySlip = DocType("Salary Slip")
-	mode_of_payments = (
-		frappe.qb.from_(SalarySlip)
-		.select(SalarySlip.mode_of_payment)
-		.where(SalarySlip.docstatus == 1)
-		.distinct()
-		.run(pluck=True)
+	mode_of_payments = frappe.db.sql_list(
+		"""
+		select distinct mode_of_payment from `tabSalary Slip` where docstatus = 1
+	"""
 	)
 	return mode_of_payments
 
@@ -71,31 +67,28 @@ def prepare_data(entry):
 
 def get_data(filters, mode_of_payments):
 	data = []
-	SalarySlip = DocType("Salary Slip")
 
-	filter_clauses = get_conditions(filters)
+	conditions = get_conditions(filters)
 
-	base_where = SalarySlip.docstatus == 1
-	for clause in filter_clauses:
-		base_where = base_where & clause
-
-	entry = (
-		frappe.qb.from_(SalarySlip)
-		.select(
-			SalarySlip.branch,
-			SalarySlip.mode_of_payment,
-			frappe.query_builder.functions.Sum(SalarySlip.net_pay).as_("net_pay"),
-			frappe.query_builder.functions.Sum(SalarySlip.gross_pay).as_("gross_pay"),
-		)
-		.where(base_where)
-		.groupby(SalarySlip.branch, SalarySlip.mode_of_payment)
-		.run(as_dict=True)
+	entry = frappe.db.sql(
+		"""
+		select branch, mode_of_payment, sum(net_pay) as net_pay, sum(gross_pay) as gross_pay
+		from `tabSalary Slip` sal
+		where docstatus = 1 %s
+		group by branch, mode_of_payment
+		"""
+		% (conditions),
+		as_dict=1,
 	)
 
 	branch_wise_entries, gross_pay = prepare_data(entry)
 
-	branches = (
-		frappe.qb.from_(SalarySlip).select(SalarySlip.branch).where(base_where).distinct().run(pluck=True)
+	branches = frappe.db.sql_list(
+		"""
+		select distinct branch from `tabSalary Slip` sal
+		where docstatus = 1 %s
+	"""
+		% (conditions)
 	)
 
 	total_row = {"total": 0, "branch": "Total"}

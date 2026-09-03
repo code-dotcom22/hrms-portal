@@ -2,20 +2,20 @@
 # See license.txt
 
 import frappe
+from frappe.tests import IntegrationTestCase
 
 from hrms.hr.doctype.training_event.test_training_event import (
 	create_training_event,
 	create_training_program,
 )
 from hrms.payroll.doctype.salary_structure.test_salary_structure import make_employee
-from hrms.tests.utils import HRMSTestSuite
 
 
-class TestTrainingFeedback(HRMSTestSuite):
+class TestTrainingFeedback(IntegrationTestCase):
 	def setUp(self):
 		create_training_program("Basic Training")
-		self.employee = make_employee("robert_loan@trainig.com", company="_Test Company")
-		self.employee2 = make_employee("suzie.tan@trainig.com", company="_Test Company")
+		self.employee = make_employee("robert_loan@trainig.com")
+		self.employee2 = make_employee("suzie.tan@trainig.com")
 		self.attendees = [{"employee": self.employee}]
 
 	def test_employee_validations_for_feedback(self):
@@ -55,6 +55,9 @@ class TestTrainingFeedback(HRMSTestSuite):
 		)
 
 		self.assertEqual(status, "Feedback Submitted")
+
+	def tearDown(self):
+		frappe.db.rollback()
 
 
 def create_training_feedback(event, employee):

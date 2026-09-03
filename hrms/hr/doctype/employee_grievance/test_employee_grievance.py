@@ -2,14 +2,13 @@
 # See license.txt
 
 import frappe
+from frappe.tests import IntegrationTestCase
 from frappe.utils import today
 
 from erpnext.setup.doctype.employee.test_employee import make_employee
 
-from hrms.tests.utils import HRMSTestSuite
 
-
-class TestEmployeeGrievance(HRMSTestSuite):
+class TestEmployeeGrievance(IntegrationTestCase):
 	def test_create_employee_grievance(self):
 		grievance_type = create_grievance_type()
 		emp_1 = make_employee("test_emp_grievance_@example.com", company="_Test Company")

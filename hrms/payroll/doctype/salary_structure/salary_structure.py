@@ -1,7 +1,6 @@
 # Copyright (c) 2015, Frappe Technologies Pvt. Ltd. and Contributors
 # License: GNU General Public License v3. See license.txt
 
-import datetime
 import re
 
 import frappe
@@ -16,39 +15,6 @@ from hrms.payroll.utils import sanitize_expression
 
 
 class SalaryStructure(Document):
-	# begin: auto-generated types
-	# This code is auto-generated. Do not modify anything in this block.
-
-	from typing import TYPE_CHECKING
-
-	if TYPE_CHECKING:
-		from frappe.types import DF
-
-		from hrms.payroll.doctype.employee_benefit_detail.employee_benefit_detail import EmployeeBenefitDetail
-		from hrms.payroll.doctype.salary_detail.salary_detail import SalaryDetail
-
-		amended_from: DF.Link | None
-		company: DF.Link
-		currency: DF.Link
-		deductions: DF.Table[SalaryDetail]
-		earnings: DF.Table[SalaryDetail]
-		employee_benefits: DF.Table[EmployeeBenefitDetail]
-		hour_rate: DF.Currency
-		is_active: DF.Literal["", "Yes", "No"]
-		is_default: DF.Literal["Yes", "No"]
-		leave_encashment_amount_per_day: DF.Currency
-		letter_head: DF.Link | None
-		max_benefits: DF.Currency
-		mode_of_payment: DF.Link | None
-		net_pay: DF.Currency
-		payment_account: DF.Link | None
-		payroll_frequency: DF.Literal["", "Monthly", "Fortnightly", "Bimonthly", "Weekly", "Daily"]
-		salary_component: DF.Link | None
-		salary_slip_based_on_timesheet: DF.Check
-		total_deduction: DF.Currency
-		total_earning: DF.Currency
-	# end: auto-generated types
-
 	def before_validate(self):
 		self.sanitize_condition_and_formula_fields()
 
@@ -169,7 +135,7 @@ class SalaryStructure(Document):
 				break
 
 	def sanitize_condition_and_formula_fields(self):
-		for table in ("earnings", "deductions", "employer_contributions"):
+		for table in ("earnings", "deductions"):
 			for row in self.get(table):
 				row.condition = row.condition.strip() if row.condition else ""
 				row.formula = row.formula.strip() if row.formula else ""
@@ -178,7 +144,7 @@ class SalaryStructure(Document):
 
 	def reset_condition_and_formula_fields(self):
 		# set old values (allowing multiline strings for better readability in the doctype form)
-		for table in ("earnings", "deductions", "employer_contributions"):
+		for table in ("earnings", "deductions"):
 			for row in self.get(table):
 				row.condition = row._condition
 				row.formula = row._formula
@@ -205,17 +171,17 @@ class SalaryStructure(Document):
 	@frappe.whitelist()
 	def assign_salary_structure(
 		self,
-		branch: str | None = None,
-		grade: str | None = None,
-		department: str | None = None,
-		designation: str | None = None,
-		employee: str | None = None,
-		payroll_payable_account: str | None = None,
-		from_date: str | None = None,
-		base: float | None = None,
-		variable: float | None = None,
-		income_tax_slab: str | None = None,
-	) -> None:
+		branch=None,
+		grade=None,
+		department=None,
+		designation=None,
+		employee=None,
+		payroll_payable_account=None,
+		from_date=None,
+		base=None,
+		variable=None,
+		income_tax_slab=None,
+	):
 		employees = self.get_employees(
 			company=self.company,
 			grade=grade,
@@ -366,41 +332,16 @@ def get_existing_assignments(employees, salary_structure, from_date):
 
 @frappe.whitelist()
 def make_salary_slip(
-	source_name: str,
-	target_doc: str | Document | None = None,
-	employee: str | None = None,
-	posting_date: str | datetime.date | None = None,
-	as_print: bool = False,
-	print_format: str | None = None,
-	for_preview: int = 0,
-	lwp_days_corrected: float | None = None,
-) -> str | Document:
-	if employee:
-		frappe.has_permission("Employee", "read", employee, throw=True)
-
-	return _make_salary_slip(
-		source_name,
-		target_doc=target_doc,
-		employee=employee,
-		posting_date=posting_date,
-		as_print=as_print,
-		print_format=print_format,
-		for_preview=for_preview,
-		lwp_days_corrected=lwp_days_corrected,
-	)
-
-
-def _make_salary_slip(
-	source_name: str,
-	target_doc: str | Document | None = None,
-	employee: str | None = None,
-	posting_date: str | datetime.date | None = None,
-	as_print: bool = False,
-	print_format: str | None = None,
-	for_preview: int = 0,
-	lwp_days_corrected: float | None = None,
-	ignore_permissions: bool = False,
-) -> str | Document:
+	source_name,
+	target_doc=None,
+	employee=None,
+	posting_date=None,
+	as_print=False,
+	print_format=None,
+	for_preview=0,
+	ignore_permissions=False,
+	lwp_days_corrected=None,
+):
 	def postprocess(source, target):
 		if employee:
 			target.employee = employee
@@ -426,8 +367,8 @@ def _make_salary_slip(
 		},
 		target_doc,
 		postprocess,
-		ignore_permissions=ignore_permissions,
 		ignore_child_tables=True,
+		ignore_permissions=ignore_permissions,
 		cached=True,
 	)
 
@@ -439,7 +380,7 @@ def _make_salary_slip(
 
 
 @frappe.whitelist()
-def get_employees(salary_structure: str) -> list[str]:
+def get_employees(salary_structure):
 	employees = frappe.get_list(
 		"Salary Structure Assignment",
 		filters={"salary_structure": salary_structure, "docstatus": 1},
@@ -457,9 +398,7 @@ def get_employees(salary_structure: str) -> list[str]:
 
 
 @frappe.whitelist()
-def get_salary_component(
-	doctype: str, txt: str, searchfield: str, start: int, page_len: int, filters: dict
-) -> list:
+def get_salary_component(doctype, txt, searchfield, start, page_len, filters):
 	sc = frappe.qb.DocType("Salary Component")
 	sca = frappe.qb.DocType("Salary Component Account")
 

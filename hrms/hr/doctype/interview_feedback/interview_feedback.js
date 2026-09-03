@@ -14,11 +14,11 @@ frappe.ui.form.on("Interview Feedback", {
 		});
 	},
 
-	interview_type: function (frm) {
+	interview_round: function (frm) {
 		frappe.call({
 			method: "hrms.hr.doctype.interview.interview.get_expected_skill_set",
 			args: {
-				interview_type: frm.doc.interview_type,
+				interview_round: frm.doc.interview_round,
 			},
 			callback: function (r) {
 				frm.set_value("skill_assessment", r.message);

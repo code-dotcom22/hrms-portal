@@ -7,7 +7,7 @@
  "engine": "InnoDB",
  "field_order": [
   "interview_details_section",
-  "interview_type",
+  "interview_round",
   "job_applicant",
   "job_opening",
   "designation",
@@ -47,6 +47,15 @@
    "label": "Job Opening",
    "options": "Job Opening",
    "read_only": 1
+  },
+  {
+   "fieldname": "interview_round",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Interview Round",
+   "options": "Interview Round",
+   "reqd": 1
   },
   {
    "default": "Pending",
@@ -93,7 +102,7 @@
    "label": "Details"
   },
   {
-   "fetch_from": "interview_type.expected_average_rating",
+   "fetch_from": "interview_round.expected_average_rating",
    "fieldname": "expected_average_rating",
    "fieldtype": "Rating",
    "label": "Expected Average Rating",
@@ -110,7 +119,7 @@
    "fieldtype": "Column Break"
   },
   {
-   "fetch_from": "interview_type.designation",
+   "fetch_from": "interview_round.designation",
    "fieldname": "designation",
    "fieldtype": "Link",
    "in_list_view": 1,
@@ -180,15 +189,6 @@
    "fieldtype": "Table",
    "label": "Interviewers",
    "options": "Interview Detail"
-  },
-  {
-   "fieldname": "interview_type",
-   "fieldtype": "Link",
-   "in_list_view": 1,
-   "in_standard_filter": 1,
-   "label": "Interview Type",
-   "options": "Interview Type",
-   "reqd": 1
   }
  ],
  "index_web_pages_for_search": 1,
@@ -199,11 +199,11 @@
    "link_fieldname": "interview"
   }
  ],
- "modified": "2026-02-19 15:40:38.547112",
+ "modified": "2025-11-21 17:24:02.676395",
  "modified_by": "Administrator",
  "module": "HR",
  "name": "Interview",
- "naming_rule": "Expression",
+ "naming_rule": "Expression (old style)",
  "owner": "Administrator",
  "permissions": [
   {

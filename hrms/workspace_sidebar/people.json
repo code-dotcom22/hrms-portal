@@ -10,11 +10,11 @@
   {
    "child": 0,
    "collapsible": 1,
-   "icon": "house",
+   "icon": "home",
    "indent": 0,
    "keep_closed": 0,
    "label": "Home",
-   "link_to": "HR Setup",
+   "link_to": "People",
    "link_type": "Workspace",
    "show_arrow": 0,
    "type": "Link"
@@ -46,7 +46,7 @@
   {
    "child": 0,
    "collapsible": 1,
-   "icon": "building-2",
+   "icon": "organization",
    "indent": 0,
    "keep_closed": 0,
    "label": "Organizational Chart",
@@ -148,11 +148,10 @@
    "url": "/desk/hr-settings#employee_tab"
   }
  ],
- "modified": "2026-07-03 15:16:39.465712",
+ "modified": "2026-01-09 17:22:08.890026",
  "modified_by": "Administrator",
  "module": "HR",
- "name": "HR Setup",
+ "name": "People",
  "owner": "Administrator",
- "standard": 1,
- "title": "HR Setup"
+ "title": "People"
 }

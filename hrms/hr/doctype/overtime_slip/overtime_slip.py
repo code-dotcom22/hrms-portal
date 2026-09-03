@@ -19,31 +19,6 @@ from hrms.payroll.doctype.salary_structure_assignment.salary_structure_assignmen
 
 
 class OvertimeSlip(Document):
-	# begin: auto-generated types
-	# This code is auto-generated. Do not modify anything in this block.
-
-	from typing import TYPE_CHECKING
-
-	if TYPE_CHECKING:
-		from frappe.types import DF
-
-		from hrms.hr.doctype.overtime_details.overtime_details import OvertimeDetails
-
-		amended_from: DF.Link | None
-		company: DF.Link
-		department: DF.Link | None
-		employee: DF.Link
-		employee_name: DF.Data | None
-		end_date: DF.Date
-		overtime_details: DF.Table[OvertimeDetails]
-		payroll_entry: DF.Link | None
-		posting_date: DF.Date
-		salary_slip: DF.Link | None
-		start_date: DF.Date
-		submitted_via_payroll_entry: DF.Check
-		total_overtime_duration: DF.Float
-	# end: auto-generated types
-
 	def validate(self):
 		if not (self.start_date or self.end_date):
 			self.get_frequency_and_dates()
@@ -342,6 +317,7 @@ class OvertimeSlip(Document):
 		return make_salary_slip(
 			salary_structure,
 			employee=self.employee,
+			ignore_permissions=True,
 			posting_date=self.start_date,
 		)
 
@@ -416,6 +392,7 @@ class OvertimeSlip(Document):
 		return details
 
 
+@frappe.whitelist()
 def filter_employees_for_overtime_slip_creation(start_date, end_date, employees, limit=None):
 	if not employees:
 		return []
@@ -470,15 +447,9 @@ def create_overtime_slips_for_employees(employees, args):
 	count = 0
 	errors = []
 	for emp in employees:
-		emp_args = args.copy()
-		relieving_date = frappe.db.get_value("Employee", emp, "relieving_date")
-		relieving_date = getdate(relieving_date) if relieving_date else None
-		if relieving_date and relieving_date < getdate(emp_args.get("end_date")):
-			emp_args["start_date"] = getdate(emp_args.get("start_date"))
-			emp_args["end_date"] = relieving_date
-		emp_args.update({"doctype": "Overtime Slip", "employee": emp})
+		args.update({"doctype": "Overtime Slip", "employee": emp})
 		try:
-			frappe.get_doc(emp_args).get_emp_and_overtime_details()
+			frappe.get_doc(args).get_emp_and_overtime_details()
 			count += 1
 		except Exception as e:
 			frappe.clear_last_message()

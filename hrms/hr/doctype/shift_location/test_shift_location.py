@@ -2,8 +2,8 @@
 # See license.txt
 
 # import frappe
-from hrms.tests.utils import HRMSTestSuite
+from frappe.tests import IntegrationTestCase
 
 
-class TestShiftLocation(HRMSTestSuite):
+class TestShiftLocation(IntegrationTestCase):
 	pass

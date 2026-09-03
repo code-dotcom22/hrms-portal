@@ -2,11 +2,10 @@
 # See license.txt
 
 import frappe
+from frappe.tests import IntegrationTestCase
 
-from hrms.tests.utils import HRMSTestSuite
 
-
-class TestAppraisalTemplate(HRMSTestSuite):
+class TestAppraisalTemplate(IntegrationTestCase):
 	def test_incorrect_weightage_allocation(self):
 		template = create_appraisal_template()
 		template.goals[1].per_weightage = 69.99

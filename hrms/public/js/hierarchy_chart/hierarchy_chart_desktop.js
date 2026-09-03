@@ -12,10 +12,20 @@ hrms.HierarchyChart = class {
 		this.method = method;
 		this.doctype = doctype;
 
-		this.page.main.addClass("frappe-card hierarchy-chart-main");
+		this.setup_page_style();
+		this.page.main.addClass("frappe-card");
 
 		this.nodes = {};
 		this.setup_node_class();
+	}
+
+	setup_page_style() {
+		this.page.main.css({
+			"min-height": "300px",
+			"max-height": "700px",
+			overflow: "auto",
+			position: "relative",
+		});
 	}
 
 	setup_node_class() {
@@ -97,16 +107,7 @@ hrms.HierarchyChart = class {
 
 		company.refresh();
 		$(`[data-fieldname="company"]`).trigger("change");
-		$(`[data-fieldname="company"] .link-field`).addClass("hierarchy-company-link-field");
-	}
-
-	set_main_state(state) {
-		const state_classes = "hierarchy-main-chart hierarchy-main-empty hierarchy-main-export";
-		this.page.main.removeClass(state_classes);
-
-		if (state) {
-			this.page.main.addClass(state);
-		}
+		$(`[data-fieldname="company"] .link-field`).css("z-index", 2);
 	}
 
 	setup_actions() {
@@ -134,7 +135,14 @@ hrms.HierarchyChart = class {
 
 	export_chart() {
 		frappe.dom.freeze(__("Exporting..."));
-		this.set_main_state("hierarchy-main-export");
+		this.page.main.css({
+			"min-height": "",
+			"max-height": "",
+			overflow: "visible",
+			position: "fixed",
+			left: "0",
+			top: "0",
+		});
 
 		$(".node-card").addClass("exported");
 
@@ -153,10 +161,11 @@ hrms.HierarchyChart = class {
 				a.click();
 			})
 			.finally(() => {
-				this.set_main_state("hierarchy-main-chart");
-				$(".node-card").removeClass("exported");
 				frappe.dom.unfreeze();
 			});
+
+		this.setup_page_style();
+		$(".node-card").removeClass("exported");
 	}
 
 	setup_hierarchy() {
@@ -219,9 +228,6 @@ hrms.HierarchyChart = class {
 			})
 			.then((r) => {
 				if (r.message.length) {
-					me.page.body.find("#hierarchy-empty-root").remove();
-					me.set_main_state("hierarchy-main-chart");
-
 					let expand_node;
 					let node;
 
@@ -420,13 +426,6 @@ hrms.HierarchyChart = class {
 		node.$children.show();
 		$(`path[data-parent="${node.id}"]`).show();
 		node.expanded = true;
-
-		// Push this parent away from the next sibling parent so their
-		// connector lines occupy distinct vertical bands.
-		if (child_nodes && child_nodes.length > 1) {
-			const extra = (child_nodes.length - 1) * 88;
-			node.$link.closest(".child-node").css("margin-bottom", extra + "px");
-		}
 	}
 
 	add_node(node, data) {

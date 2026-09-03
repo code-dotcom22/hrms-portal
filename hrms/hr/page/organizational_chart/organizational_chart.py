@@ -3,7 +3,7 @@ from frappe.query_builder.functions import Count
 
 
 @frappe.whitelist()
-def get_children(parent: str | None = None, company: str | None = None, exclude_node: str | None = None):
+def get_children(parent=None, company=None, exclude_node=None):
 	filters = [["status", "=", "Active"]]
 	if company and company != "All Companies":
 		filters.append(["company", "=", company])
@@ -16,7 +16,7 @@ def get_children(parent: str | None = None, company: str | None = None, exclude_
 	if exclude_node:
 		filters.append(["name", "!=", exclude_node])
 
-	employees = frappe.get_list(
+	employees = frappe.get_all(
 		"Employee",
 		fields=[
 			"employee_name as name",

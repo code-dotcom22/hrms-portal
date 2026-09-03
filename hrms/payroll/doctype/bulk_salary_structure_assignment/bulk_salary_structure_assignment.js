@@ -208,7 +208,7 @@ frappe.ui.form.on("Bulk Salary Structure Assignment", {
 						primary_action_label: __("Update"),
 						primary_action(values) {
 							const col_idx = frm.employees_datatable.datamanager.columns.find(
-								(col) => col.id === d.toLowerCase(),
+								(col) => col.content === d,
 							).colIndex;
 							frm.checked_rows_indexes.forEach((row_idx) => {
 								frm.employees_datatable.cellmanager.updateCell(

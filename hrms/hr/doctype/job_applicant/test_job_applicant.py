@@ -2,16 +2,16 @@
 # See license.txt
 
 import frappe
+from frappe.tests import IntegrationTestCase
 from frappe.utils import nowdate
 
 from erpnext.setup.doctype.employee.test_employee import make_employee
 
 from hrms.hr.doctype.job_offer.test_job_offer import create_job_offer
 from hrms.tests.test_utils import create_job_applicant
-from hrms.tests.utils import HRMSTestSuite
 
 
-class TestJobApplicant(HRMSTestSuite):
+class TestJobApplicant(IntegrationTestCase):
 	def test_job_applicant_naming(self):
 		applicant = frappe.get_doc(
 			{
@@ -35,9 +35,7 @@ class TestJobApplicant(HRMSTestSuite):
 
 	def test_update_applicant_to_employee(self):
 		applicant = create_job_applicant()
-		job_offer = create_job_offer(
-			job_applicant=applicant.name, status="Awaiting Response", company="_Test Company"
-		)
+		job_offer = create_job_offer(job_applicant=applicant.name, status="Awaiting Response")
 		job_offer.save()
 
 		# before creating employee
@@ -45,10 +43,13 @@ class TestJobApplicant(HRMSTestSuite):
 		self.assertEqual(job_offer.status, "Awaiting Response")
 
 		# create employee
-		make_employee(user=applicant.name, job_applicant=applicant.name, company="_Test Company")
+		make_employee(user=applicant.name, job_applicant=applicant.name)
 
 		# after creating employee
 		applicant.reload()
 		self.assertEqual(applicant.status, "Accepted")
 		job_offer.reload()
 		self.assertEqual(job_offer.status, "Accepted")
+
+	def tearDown(self):
+		frappe.db.rollback()

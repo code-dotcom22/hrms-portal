@@ -2,6 +2,7 @@
 # See license.txt
 
 import frappe
+from frappe.tests import IntegrationTestCase
 
 from erpnext.setup.doctype.designation.test_designation import create_designation
 from erpnext.setup.doctype.employee.test_employee import make_employee
@@ -14,10 +15,9 @@ from hrms.hr.doctype.employee_performance_feedback.test_employee_performance_fee
 )
 from hrms.hr.doctype.goal.test_goal import create_goal
 from hrms.tests.test_utils import create_company
-from hrms.tests.utils import HRMSTestSuite
 
 
-class TestAppraisal(HRMSTestSuite):
+class TestAppraisal(IntegrationTestCase):
 	def setUp(self):
 		frappe.db.delete("Goal")
 		frappe.db.delete("Appraisal")
@@ -29,6 +29,7 @@ class TestAppraisal(HRMSTestSuite):
 		engineer = create_designation(designation_name="Engineer")
 		engineer.appraisal_template = self.template.name
 		engineer.save()
+
 		self.employee1 = make_employee(
 			"test_appraisal1@example.com", company=self.company, designation="Engineer"
 		)
@@ -72,7 +73,7 @@ class TestAppraisal(HRMSTestSuite):
 		cycle.create_appraisals()
 		appraisal = self.setup_appraisal(cycle)
 
-		self.assertEqual(appraisal.final_score, 3.77)
+		self.assertEqual(appraisal.final_score, 3.767)
 
 	def test_final_score_using_formula(self):
 		cycle = create_appraisal_cycle(designation="Engineer", kra_evaluation_method="Manual Rating")
@@ -87,7 +88,7 @@ class TestAppraisal(HRMSTestSuite):
 
 		appraisal = self.setup_appraisal(cycle)
 
-		self.assertEqual(appraisal.final_score, 3.77)
+		self.assertEqual(appraisal.final_score, 3.767)
 
 	def setup_appraisal(self, cycle):
 		appraisal = frappe.db.exists("Appraisal", {"appraisal_cycle": cycle.name, "employee": self.employee1})
@@ -105,7 +106,7 @@ class TestAppraisal(HRMSTestSuite):
 		appraisal.save()
 
 		# FEEDBACK SCORE
-		reviewer = make_employee("reviewer1@example.com", designation="Engineer", company=self.company)
+		reviewer = make_employee("reviewer1@example.com", designation="Engineer")
 		feedback = create_performance_feedback(
 			self.employee1,
 			reviewer,
@@ -159,8 +160,8 @@ class TestAppraisal(HRMSTestSuite):
 		self.assertEqual(appraisal.appraisal_kra[1].goal_score, 35)
 
 		self.assertEqual(appraisal.goal_score_percentage, 38.75)
-		self.assertEqual(appraisal.total_score, 1.94)
-		self.assertEqual(appraisal.final_score, 0.65)
+		self.assertEqual(appraisal.total_score, 1.938)
+		self.assertEqual(appraisal.final_score, 0.646)
 
 	def test_goal_score_after_parent_goal_change(self):
 		"""

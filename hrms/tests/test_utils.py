@@ -58,12 +58,15 @@ def get_first_sunday(holiday_list="Salary Slip Test Holiday List", for_date=None
 		month_start_date = date
 
 	month_end_date = get_last_day(date)
-	first_sunday = frappe.get_value(
-		"Holiday",
-		{"parent": holiday_list, "holiday_date": ("between", (month_start_date, month_end_date))},
-		"holiday_date",
-		order_by="holiday_date asc",
-	)
+	first_sunday = frappe.db.sql(
+		"""
+		select holiday_date from `tabHoliday`
+		where parent = %s
+			and holiday_date between %s and %s
+		order by holiday_date
+	""",
+		(holiday_list, month_start_date, month_end_date),
+	)[0][0]
 
 	return first_sunday
 
@@ -86,12 +89,7 @@ def add_date_to_holiday_list(date: str, holiday_list: str, is_half_day: bool = 0
 	holiday_list.save()
 
 
-def create_company(
-	name: str = "_Test Company",
-	is_group: 0 | 1 = 0,
-	parent_company: str | None = None,
-	abbr: str | None = None,
-):
+def create_company(name: str = "_Test Company", is_group: 0 | 1 = 0, parent_company: str | None = None):
 	if frappe.db.exists("Company", name):
 		return frappe.get_doc("Company", name)
 
@@ -99,7 +97,6 @@ def create_company(
 		{
 			"doctype": "Company",
 			"company_name": name,
-			"abbr": abbr,
 			"default_currency": "INR",
 			"country": "India",
 			"is_group": is_group,

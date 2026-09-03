@@ -2,6 +2,7 @@
 # See license.txt
 
 import frappe
+from frappe.tests import IntegrationTestCase
 from frappe.utils import add_days, getdate
 
 from hrms.hr.doctype.employee_onboarding.employee_onboarding import (
@@ -11,15 +12,23 @@ from hrms.hr.doctype.employee_onboarding.employee_onboarding import (
 from hrms.hr.doctype.job_offer.test_job_offer import create_job_offer
 from hrms.payroll.doctype.salary_slip.test_salary_slip import make_holiday_list
 from hrms.tests.test_utils import create_company
-from hrms.tests.utils import HRMSTestSuite
 
 
-class TestEmployeeOnboarding(HRMSTestSuite):
+class TestEmployeeOnboarding(IntegrationTestCase):
+	def setUp(self):
+		create_company()
+		if frappe.db.exists("Employee Onboarding", {"employee_name": "Test Researcher"}):
+			frappe.db.sql("delete from `tabEmployee Onboarding` where employee_name=%s", "Test Researcher")
+
+		project = "Employee Onboarding : test@researcher.com"
+		frappe.db.sql("delete from tabProject where project_name=%s", project)
+		frappe.db.sql("delete from tabTask where project=%s", project)
+
 	def test_employee_onboarding_incomplete_task(self):
 		onboarding = create_employee_onboarding()
 
 		project_name = frappe.db.get_value("Project", onboarding.project, "project_name")
-		self.assertEqual(project_name, "Employee Onboarding : test@engineer.com")
+		self.assertEqual(project_name, "Employee Onboarding : test@researcher.com")
 
 		# don't allow making employee if onboarding is not complete
 		self.assertRaises(IncompleteTaskError, make_employee, onboarding.name)
@@ -57,7 +66,7 @@ class TestEmployeeOnboarding(HRMSTestSuite):
 		employee.date_of_birth = "1990-05-08"
 		employee.gender = "Female"
 		employee.insert()
-		self.assertEqual(employee.employee_name, "Test Engineer")
+		self.assertEqual(employee.employee_name, "Test Researcher")
 
 	def test_mark_onboarding_as_completed(self):
 		onboarding = create_employee_onboarding()
@@ -79,16 +88,19 @@ class TestEmployeeOnboarding(HRMSTestSuite):
 		for task_status in frappe.get_all("Task", dict(project=project.name), pluck="status"):
 			self.assertEqual(task_status, "Completed")
 
+	def tearDown(self):
+		frappe.db.rollback()
+
 
 def get_job_applicant():
-	if frappe.db.exists("Job Applicant", "test@engineer.com"):
-		return frappe.get_doc("Job Applicant", "test@engineer.com")
+	if frappe.db.exists("Job Applicant", "test@researcher.com"):
+		return frappe.get_doc("Job Applicant", "test@researcher.com")
 	applicant = frappe.new_doc("Job Applicant")
-	applicant.applicant_name = "Test Engineer"
-	applicant.email_id = "test@engineer.com"
-	applicant.designation = "Engineer"
+	applicant.applicant_name = "Test Researcher"
+	applicant.email_id = "test@researcher.com"
+	applicant.designation = "Researcher"
 	applicant.status = "Open"
-	applicant.cover_letter = "I am a great Engineer."
+	applicant.cover_letter = "I am a great Researcher."
 	applicant.insert()
 	return applicant
 
@@ -98,7 +110,7 @@ def get_job_offer(applicant_name):
 	if job_offer:
 		return frappe.get_doc("Job Offer", job_offer)
 
-	job_offer = create_job_offer(job_applicant=applicant_name, company="_Test Company")
+	job_offer = create_job_offer(job_applicant=applicant_name)
 	job_offer.submit()
 	return job_offer
 
@@ -118,7 +130,7 @@ def create_employee_onboarding():
 	onboarding.date_of_joining = onboarding.boarding_begins_on = getdate()
 	onboarding.company = "_Test Company"
 	onboarding.holiday_list = holiday_list.name
-	onboarding.designation = "Engineer"
+	onboarding.designation = "Researcher"
 	onboarding.append(
 		"activities",
 		{

@@ -2,6 +2,7 @@
 # See license.txt
 
 import frappe
+from frappe.tests import IntegrationTestCase
 from frappe.utils import today
 
 from erpnext.setup.doctype.designation.test_designation import create_designation
@@ -11,40 +12,43 @@ from hrms.hr.doctype.employee_referral.employee_referral import (
 	create_additional_salary,
 	create_job_applicant,
 )
-from hrms.tests.utils import HRMSTestSuite
 
 
-class TestEmployeeReferral(HRMSTestSuite):
+class TestEmployeeReferral(IntegrationTestCase):
+	def setUp(self):
+		for d in ["Job Applicant", "Employee Referral"]:
+			frappe.db.delete(d)
+
 	def test_workflow_and_status_sync(self):
 		emp_ref = create_employee_referral()
 
 		# Check Initial status
-		self.assertEqual(emp_ref.status, "Pending")
+		self.assertTrue(emp_ref.status, "Pending")
 
 		job_applicant = create_job_applicant(emp_ref.name)
 
 		# Check status sync
 		emp_ref.reload()
-		self.assertEqual(emp_ref.status, "In Process")
+		self.assertTrue(emp_ref.status, "In Process")
 
 		job_applicant.reload()
 		job_applicant.status = "Rejected"
 		job_applicant.save()
 
 		emp_ref.reload()
-		self.assertEqual(emp_ref.status, "Rejected")
+		self.assertTrue(emp_ref.status, "Rejected")
 
 		job_applicant.reload()
 		job_applicant.status = "Accepted"
 		job_applicant.save()
 
 		emp_ref.reload()
-		self.assertEqual(emp_ref.status, "Accepted")
+		self.assertTrue(emp_ref.status, "Accepted")
 
 		# Check for Referral reference in additional salary
 
-		add_sal = create_additional_salary(emp_ref.name)
-		self.assertEqual(add_sal.ref_docname, emp_ref.name)
+		add_sal = create_additional_salary(emp_ref)
+		self.assertTrue(add_sal.ref_docname, emp_ref.name)
 
 	def test_status_on_discard(self):
 		refarral = create_employee_referral(do_not_submit=True)

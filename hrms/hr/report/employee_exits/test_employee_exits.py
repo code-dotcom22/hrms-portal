@@ -1,4 +1,5 @@
 import frappe
+from frappe.tests import IntegrationTestCase
 from frappe.utils import add_days, getdate
 
 from erpnext.setup.doctype.employee.test_employee import make_employee
@@ -9,73 +10,83 @@ from hrms.hr.doctype.full_and_final_statement.test_full_and_final_statement impo
 )
 from hrms.hr.report.employee_exits.employee_exits import execute
 from hrms.tests.test_utils import create_company
-from hrms.tests.utils import HRMSTestSuite
 
 
-class TestEmployeeExits(HRMSTestSuite):
-	def setUp(self):
-		self.company = create_company("Test Company").name
-		self.create_records()
+class TestEmployeeExits(IntegrationTestCase):
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		create_company("Test Company")
+		frappe.db.delete("Employee", {"company": "Test Company"})
+		frappe.db.delete("Full and Final Statement", {"company": "Test Company"})
+		frappe.db.delete("Exit Interview", {"company": "Test Company"})
 
-	def create_records(self):
-		self.emp1 = make_employee(
+		cls.create_records()
+
+	@classmethod
+	def tearDownClass(cls):
+		frappe.db.rollback()
+
+	@classmethod
+	def create_records(cls):
+		cls.emp1 = make_employee(
 			"employeeexit1@example.com",
-			company=self.company,
+			company="Test Company",
 			date_of_joining=getdate("01-10-2021"),
 			relieving_date=add_days(getdate(), 14),
 			designation="Accountant",
 		)
-		self.emp2 = make_employee(
+		cls.emp2 = make_employee(
 			"employeeexit2@example.com",
-			company=self.company,
+			company="Test Company",
 			date_of_joining=getdate("01-12-2021"),
 			relieving_date=add_days(getdate(), 15),
 			designation="Accountant",
 		)
 
-		self.emp3 = make_employee(
+		cls.emp3 = make_employee(
 			"employeeexit3@example.com",
-			company=self.company,
+			company="Test Company",
 			date_of_joining=getdate("02-12-2021"),
 			relieving_date=add_days(getdate(), 29),
 			designation="Engineer",
 		)
-		self.emp4 = make_employee(
+		cls.emp4 = make_employee(
 			"employeeexit4@example.com",
-			company=self.company,
+			company="Test Company",
 			date_of_joining=getdate("01-12-2021"),
 			relieving_date=add_days(getdate(), 30),
 			designation="Engineer",
 		)
 
 		# exit interview for 3 employees only
-		self.interview1 = create_exit_interview(self.emp1)
-		self.interview2 = create_exit_interview(self.emp2)
-		self.interview3 = create_exit_interview(self.emp3)
+		cls.interview1 = create_exit_interview(cls.emp1)
+		cls.interview2 = create_exit_interview(cls.emp2)
+		cls.interview3 = create_exit_interview(cls.emp3)
 
 		# create fnf for some records
-		self.fnf1 = create_full_and_final_statement(self.emp1)
-		self.fnf2 = create_full_and_final_statement(self.emp2)
+		cls.fnf1 = create_full_and_final_statement(cls.emp1)
+		cls.fnf2 = create_full_and_final_statement(cls.emp2)
 
 		# link questionnaire for a few records
 		# setting employee doctype as reference instead of creating a questionnaire
 		# since this is just for a test
 		frappe.db.set_value(
 			"Exit Interview",
-			self.interview1.name,
-			{"ref_doctype": "Employee", "reference_document_name": self.emp1},
+			cls.interview1.name,
+			{"ref_doctype": "Employee", "reference_document_name": cls.emp1},
 		)
 
 		frappe.db.set_value(
 			"Exit Interview",
-			self.interview2.name,
-			{"ref_doctype": "Employee", "reference_document_name": self.emp2},
+			cls.interview2.name,
+			{"ref_doctype": "Employee", "reference_document_name": cls.emp2},
 		)
 
 		frappe.db.set_value(
 			"Exit Interview",
-			self.interview3.name,
-			{"ref_doctype": "Employee", "reference_document_name": self.emp3},
+			cls.interview3.name,
+			{"ref_doctype": "Employee", "reference_document_name": cls.emp3},
 		)
 
 	def test_employee_exits_summary(self):

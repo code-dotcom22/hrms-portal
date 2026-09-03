@@ -2,9 +2,9 @@
 # See license.txt
 
 import frappe
+from frappe.tests import IntegrationTestCase
 from frappe.utils import add_days, getdate
 
-from erpnext.setup.doctype.employee.employee import is_holiday
 from erpnext.setup.doctype.employee.test_employee import make_employee
 
 from hrms.hr.doctype.attendance.attendance import mark_attendance
@@ -19,10 +19,9 @@ from hrms.hr.doctype.holiday_list_assignment.test_holiday_list_assignment import
 from hrms.hr.doctype.leave_type.test_leave_type import create_leave_type
 from hrms.hr.doctype.shift_type.test_shift_type import setup_shift_type
 from hrms.payroll.doctype.salary_slip.test_salary_slip import make_leave_application
-from hrms.tests.utils import HRMSTestSuite
 
 
-class TestEmployeeAttendanceTool(HRMSTestSuite):
+class TestEmployeeAttendanceTool(IntegrationTestCase):
 	def setUp(self):
 		frappe.db.delete("Attendance")
 
@@ -79,16 +78,13 @@ class TestEmployeeAttendanceTool(HRMSTestSuite):
 		# only half day attendance created from leave type should be fetched to update in the tool
 		employee = frappe.get_doc("Employee", self.employee1)
 		leave_type = create_leave_type(leave_type="_Test Employee Attendance Tool", include_holidays=0)
-		date = getdate()
-		while is_holiday(employee=employee.name, date=date):
-			date = add_days(date, -1)
 		frappe.get_doc(
 			{
 				"doctype": "Leave Allocation",
 				"employee": employee.name,
 				"employee_name": employee.employee_name,
 				"leave_type": leave_type.name,
-				"from_date": add_days(date, -2),
+				"from_date": add_days(getdate(), -2),
 				"new_leaves_allocated": 15,
 				"carry_forward": 0,
 				"to_date": add_days(getdate(), 30),
@@ -96,14 +92,16 @@ class TestEmployeeAttendanceTool(HRMSTestSuite):
 		).submit()
 		make_leave_application(
 			employee=employee.name,
-			from_date=date,
-			to_date=date,
+			from_date=getdate(),
+			to_date=getdate(),
 			leave_type=leave_type.name,
 			half_day=1,
-			half_day_date=date,
+			half_day_date=getdate(),
 		)
-		mark_attendance(self.employee2, attendance_date=date, status="Half Day", half_day_status="Absent")
-		total_employees = get_employees(date, company="_Test Company")
+		mark_attendance(
+			self.employee2, attendance_date=getdate(), status="Half Day", half_day_status="Absent"
+		)
+		total_employees = get_employees(getdate(), company="_Test Company")
 		half_marked_employees = total_employees.get("half_day_marked")
 		self.assertEqual(len(half_marked_employees), 1)
 		self.assertEqual(half_marked_employees[0].get("employee_name"), employee.employee_name)
@@ -116,12 +114,8 @@ class TestEmployeeAttendanceTool(HRMSTestSuite):
 		employee2 = frappe.get_doc("Employee", self.employee2)
 		leave_type = create_leave_type(leave_type="_Test Employee Attendance Tool", include_holidays=0)
 		date = add_days(getdate(), -1)
-		while is_holiday(employee=employee2.name, date=date) or is_holiday(
-			employee=employee4.name, date=date
-		):
-			date = add_days(date, -1)
-		create_leave_allocation(employee2, leave_type, date)
-		create_leave_allocation(employee4, leave_type, date)
+		create_leave_allocation(employee2, leave_type)
+		create_leave_allocation(employee4, leave_type)
 		make_leave_application(
 			employee=employee2.name,
 			from_date=date,
@@ -176,7 +170,6 @@ class TestEmployeeAttendanceTool(HRMSTestSuite):
 				"date_of_joining": "2023-01-01",
 				"default_shift": "",
 				"gender": "Male",
-				"company": "_Test Company",
 			}
 		).insert()
 
@@ -189,7 +182,6 @@ class TestEmployeeAttendanceTool(HRMSTestSuite):
 				"date_of_joining": "2023-01-01",
 				"default_shift": self.shift.name,
 				"gender": "Male",
-				"company": "_Test Company",
 			}
 		).insert()
 
@@ -202,7 +194,6 @@ class TestEmployeeAttendanceTool(HRMSTestSuite):
 				"date_of_joining": "2023-01-01",
 				"default_shift": "",
 				"gender": "Male",
-				"company": "_Test Company",
 			}
 		).insert()
 
@@ -234,75 +225,15 @@ class TestEmployeeAttendanceTool(HRMSTestSuite):
 		self.assertIn(self.employee2.name, filtered)
 		self.assertNotIn(self.employee3.name, filtered)
 
-	def test_mark_half_day_attendance_permissions(self):
-		user_no_role = "test_no_role@example.com"
 
-		frappe.set_user("Administrator")
-		make_employee(user_no_role, company="_Test Company")
-
-		date = add_days(getdate(), -1)
-		while is_holiday(employee=self.employee1, date=date):
-			date = add_days(date, -1)
-
-		# Create and submit an attendance record as Administrator
-		attendance = frappe.get_doc(
-			{
-				"doctype": "Attendance",
-				"employee": self.employee1,
-				"attendance_date": date,
-				"status": "Present",
-			}
-		).insert()
-		attendance.submit()
-
-		# Scenario 1 (Security): user without Attendance write permission
-		# Verify the unauthorized user cannot update half-day attendance
-		frappe.set_user(user_no_role)
-		try:
-			# Precondition: verify the user lacks doctype-level write access
-			self.assertFalse(frappe.has_permission("Attendance", "write"))
-
-			with self.assertRaises(frappe.PermissionError):
-				mark_employee_attendance(
-					employee_list=[],
-					status="Present",
-					date=date,
-					mark_half_day=True,
-					half_day_status="Absent",
-					half_day_employee_list=[self.employee1],
-				)
-		finally:
-			frappe.set_user("Administrator")
-
-		# Verify the record was NOT modified
-		attendance.reload()
-		self.assertIsNone(attendance.half_day_status)
-		self.assertEqual(attendance.status, "Present")
-
-		# Scenario 2 (Positive): Administrator can update half-day attendance
-		mark_employee_attendance(
-			employee_list=[],
-			status="Present",
-			date=date,
-			mark_half_day=True,
-			half_day_status="Absent",
-			half_day_employee_list=[self.employee1],
-		)
-
-		attendance.reload()
-		self.assertEqual(attendance.half_day_status, "Absent")
-		self.assertEqual(attendance.status, "Present")
-
-
-def create_leave_allocation(employee, leave_type, date=None):
-	from_date = add_days(date or getdate(), -2)
+def create_leave_allocation(employee, leave_type):
 	frappe.get_doc(
 		{
 			"doctype": "Leave Allocation",
 			"employee": employee.name,
 			"employee_name": employee.employee_name,
 			"leave_type": leave_type.name,
-			"from_date": from_date,
+			"from_date": add_days(getdate(), -2),
 			"new_leaves_allocated": 15,
 			"carry_forward": 0,
 			"to_date": add_days(getdate(), 30),

@@ -2,6 +2,7 @@
 # See license.txt
 
 import frappe
+from frappe.tests import IntegrationTestCase
 from frappe.utils import add_days, nowdate
 
 from erpnext.setup.doctype.designation.test_designation import create_designation
@@ -10,11 +11,13 @@ from hrms.hr.doctype.job_applicant.job_applicant import get_applicant_to_hire_pe
 from hrms.hr.doctype.job_offer.job_offer import get_offer_acceptance_rate
 from hrms.hr.doctype.staffing_plan.test_staffing_plan import make_company
 from hrms.tests.test_utils import create_job_applicant
-from hrms.tests.utils import HRMSTestSuite
 
 
-class TestJobOffer(HRMSTestSuite):
+class TestJobOffer(IntegrationTestCase):
 	def setUp(self):
+		frappe.db.delete("Job Applicant")
+		frappe.db.delete("Job Offer")
+
 		create_designation(designation_name="Researcher")
 
 	def test_job_offer_creation_against_vacancies(self):
@@ -27,7 +30,6 @@ class TestJobOffer(HRMSTestSuite):
 			staffing_details=[
 				{"designation": "UX Designer", "vacancies": 0, "estimated_cost_per_position": 5000}
 			],
-			company="_Test Company",
 		)
 		self.assertRaises(frappe.ValidationError, job_offer.submit)
 
@@ -90,10 +92,8 @@ def create_job_offer(**args):
 			"offer_date": args.offer_date or nowdate(),
 			"designation": args.designation or "Researcher",
 			"status": args.status or "Accepted",
-			"company": args.company or "_Test Company",
 		}
 	)
-	job_offer.update(args)
 	return job_offer
 
 
@@ -111,7 +111,6 @@ def create_staffing_plan(**args):
 			"to_date": args.to_date or add_days(nowdate(), 10),
 			"staffing_details": args.staffing_details
 			or [{"designation": "Researcher", "vacancies": 1, "estimated_cost_per_position": 50000}],
-			"company": args.company or "_Test Company",
 		}
 	)
 	staffing_plan.insert()

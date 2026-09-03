@@ -7,6 +7,7 @@ import os
 import frappe
 from frappe import _
 from frappe.core.doctype.user_permission.test_user_permission import create_user
+from frappe.tests import IntegrationTestCase
 from frappe.utils import add_days, get_datetime, get_time, getdate, nowtime
 
 from erpnext.setup.doctype.designation.test_designation import create_designation
@@ -20,10 +21,9 @@ from hrms.hr.doctype.interview.interview import (
 )
 from hrms.hr.doctype.job_applicant.job_applicant import get_interview_details
 from hrms.tests.test_utils import create_job_applicant, get_email_by_subject
-from hrms.tests.utils import HRMSTestSuite
 
 
-class TestInterview(HRMSTestSuite):
+class TestInterview(IntegrationTestCase):
 	def test_validations_for_designation(self):
 		job_applicant = create_job_applicant()
 		interview = create_interview_and_dependencies(
@@ -111,7 +111,7 @@ class TestInterview(HRMSTestSuite):
 			details.get("interviews").get(interview.name),
 			{
 				"name": interview.name,
-				"interview_type": interview.interview_type,
+				"interview_round": interview.interview_round,
 				"scheduled_on": interview.scheduled_on,
 				"average_rating": interview.average_rating * 5,
 				"status": "Pending",
@@ -205,6 +205,9 @@ class TestInterview(HRMSTestSuite):
 
 		self.assertEqual(interview.status, "Cancelled")
 
+	def tearDown(self):
+		frappe.db.rollback()
+
 
 def create_interview_and_dependencies(
 	job_applicant,
@@ -221,7 +224,7 @@ def create_interview_and_dependencies(
 	create_user("test_interviewer1@example.com", "Interviewer")
 	create_user("test_interviewer2@example.com", "Interviewer")
 
-	interview_type = create_interview_type(
+	interview_round = create_interview_round(
 		"Technical Round",
 		["Python", "JS"],
 		["test_interviewer1@example.com", "test_interviewer2@example.com"],
@@ -230,7 +233,7 @@ def create_interview_and_dependencies(
 	)
 
 	interview = frappe.new_doc("Interview")
-	interview.interview_type = interview_type.name
+	interview.interview_round = interview_round.name
 	interview.job_applicant = job_applicant
 	interview.scheduled_on = scheduled_on or getdate()
 	interview.from_time = from_time or nowtime()
@@ -247,25 +250,26 @@ def create_interview_and_dependencies(
 	return interview
 
 
-def create_interview_type(name, skill_set, interviewers=None, designation=None, save=True):
+def create_interview_round(name, skill_set, interviewers=None, designation=None, save=True):
 	create_skill_set(skill_set)
-	interview_type = frappe.new_doc("Interview Type")
-	interview_type.interview_type_name = name
-	interview_type.description = "_Test_Description"
+	interview_round = frappe.new_doc("Interview Round")
+	interview_round.round_name = name
+	interview_round.interview_type = create_interview_type()
 	# average rating = 4
-	interview_type.expected_average_rating = 0.8
+	interview_round.expected_average_rating = 0.8
 	if designation:
-		interview_type.designation = designation
+		interview_round.designation = designation
 
 	for skill in skill_set:
-		interview_type.append("expected_skill_set", {"skill": skill})
+		interview_round.append("expected_skill_set", {"skill": skill})
 
 	for interviewer in interviewers:
-		interview_type.append("interviewers", {"user": interviewer})
+		interview_round.append("interviewers", {"user": interviewer})
 
 	if save:
-		interview_type.save()
-	return interview_type
+		interview_round.save()
+
+	return interview_round
 
 
 def create_skill_set(skill_set):
@@ -274,6 +278,18 @@ def create_skill_set(skill_set):
 			doc = frappe.new_doc("Skill")
 			doc.skill_name = skill
 			doc.save()
+
+
+def create_interview_type(name="test_interview_type"):
+	if frappe.db.exists("Interview Type", name):
+		return frappe.get_doc("Interview Type", name).name
+	else:
+		doc = frappe.new_doc("Interview Type")
+		doc.name = name
+		doc.description = "_Test_Description"
+		doc.save()
+
+		return doc.name
 
 
 def setup_reminder_settings():
